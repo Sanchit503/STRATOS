@@ -1,0 +1,389 @@
+{% extends "layout.html" %}
+{% block title %}Missile Inventory{% endblock %}
+{% block page_title %}🚀 Missile Inventory{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% endblock %}
+
+{% block content %}
+<div class="tbl-wrap" style="margin-bottom:20px;">
+    <div class="tbl-toolbar">
+        <div class="tbl-filters">
+            <select class="select" id="base-select" onchange="loadMissiles()" style="min-width:220px;">
+                <option value="">Select a Base</option>
+            </select>
+            <button class="btn btn-ghost" onclick="document.getElementById('base-select').value=''; loadMissiles()"
+                title="View all bases">
+                ⊞ Global View
+            </button>
+            <span id="missile-warning" style="display:none;" class="badge badge-red">&#x26a0; Depleted Stock
+                Detected</span>
+        </div>
+        <button class="btn btn-primary" id="btn-add-missile" style="display:none;"
+            onclick="openAddForBase(document.getElementById('base-select').value, (allBases.find(b=>b.base_id==document.getElementById('base-select').value)||{}).base_name||'Base')">+ Add Missile</button>
+    </div>
+</div>
+
+<div class="grid-2-1">
+    <div>
+        <div id="missile-placeholder" style="display:none;">
+            <div class="section-title" style="margin-bottom:12px;">🌍 Global Missile Inventory (Grouped by Base)</div>
+            <div id="global-missile-container" style="display:flex; flex-direction:column; gap:20px;"></div>
+        </div>
+
+        <div class="tbl-wrap" id="missile-table-wrap" style="display:none;">
+            <div style="overflow-x:auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Missile Name</th>
+                            <th>Category</th>
+                            <th>Max Range (km)</th>
+                            <th>Quantity</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="missile-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mini Map -->
+    <div>
+        <div class="card" style="padding:0;overflow:hidden;position:sticky;top:80px;">
+            <div id="missile-map" style="height:450px;"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Missile Modal -->
+<div class="modal-overlay" id="add-missile-modal">
+    <div class="modal">
+        <div class="modal-title">
+            <span id="m-modal-title">Add Missile to Base</span>
+            <button class="modal-close" onclick="closeModal('add-missile-modal')">&#x2715;</button>
+        </div>
+        <form onsubmit="saveMissile(event)">
+            <input type="hidden" id="m-base-id">
+            <div class="form-group">
+                <label class="form-label">Missile Type</label>
+                <select class="form-input" id="m-type"></select>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Quantity</label>
+                    <input class="form-input" id="m-qty" type="number" min="0" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Status</label>
+                    <select class="form-input" id="m-status">
+                        <option>Fully Operational</option>
+                        <option>Operational</option>
+                        <option>Under Maintenance</option>
+                        <option>Decommissioned</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;">
+                <button type="button" class="btn btn-ghost" onclick="closeModal('add-missile-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- T8 Transaction Demo -->
+<div style="margin-top:36px;padding-top:24px;border-top:1px solid var(--border-dim);">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+        <div>
+            <div style="font-size:14px;font-weight:700;color:var(--text);">⚡ T8 — Invalid Transfer (ROLLBACK Demo)</div>
+            <div style="font-size:12px;color:var(--muted);margin-top:3px;">Attempt 99,999 BrahMos from Hindon (has ~48) → insufficient stock → Explicit ROLLBACK</div>
+        </div>
+        <button class="btn btn-primary" style="background:rgba(255,51,102,0.15);color:var(--red);border:1px solid rgba(255,51,102,0.3);" onclick="runFeatureTx('t8','missiles-t8-result')">▶ Run T8 (Trigger Rollback)</button>
+    </div>
+    <div id="missiles-t8-result" style="display:none;background:var(--bg-panel);border:1px solid var(--glass-border);border-radius:12px;padding:20px;"></div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    let missileTypes = [];
+    let allBases = [];
+    let mMap, mMarkers = {};
+
+    // ── Icon factory (module-level so all functions can access it) ──
+    function makeIcon(b, highlighted) {
+        const isNaval = b.force_type === 'Naval';
+        const sz = highlighted ? 48 : 36;
+        const borderColor = highlighted ? '#f59e0b' : (isNaval ? '#22d3ee' : '#3b82f6');
+        const glow = highlighted ? 'filter:drop-shadow(0 0 10px #f59e0b);' : '';
+        const svgAF = `<svg viewBox="0 0 24 24" fill="currentColor" width="${sz * 0.5}" height="${sz * 0.5}"><path d="M12,2A2,2 0 0,1 14,4C14,4.74 13.6,5.39 13,5.73V7.5L19.5,11.5V13.5L13,11.5V17.5L15,19V20.5L12,19.5L9,20.5V19L11,17.5V11.5L4.5,13.5V11.5L11,7.5V5.73C10.4,5.39 10,4.74 10,4A2,2 0 0,1 12,2Z"/></svg>`;
+        const svgNav = `<svg viewBox="0 0 24 24" fill="currentColor" width="${sz * 0.5}" height="${sz * 0.5}"><path d="M12,2A3,3 0 0,1 15,5A3,3 0 0,1 12,8A3,3 0 0,1 9,5A3,3 0 0,1 12,2M12,4A1,1 0 0,0 11,5A1,1 0 0,0 12,6A1,1 0 0,0 13,5A1,1 0 0,0 12,4M15,10V11H13V15.5L15.9,16.5L16.2,16.4C16.8,16 17,15.3 16.7,14.6L16.4,14L18.2,13.4L18.5,14C19,15.2 18.6,16.5 17.5,17.2L17.2,17.4L13,18.8V20H15V22H9V20H11V18.8L6.8,17.4L6.5,17.2C5.4,16.5 5,15.2 5.5,14L5.8,13.4L7.6,14L7.3,14.6C7,15.3 7.2,16 7.8,16.4L8.1,16.5L11,15.5V11H9V10H15M4,10C4,14.4 7.6,18 12,18C16.4,18 20,14.4 20,10H18C18,13.3 15.3,16 12,16C8.7,16 6,13.3 6,10H4Z"/></svg>`;
+        return L.divIcon({
+            className: '',
+            html: `<div class="mm ${isNaval ? 'mm-naval' : 'mm-af'}" style="width:${sz}px;height:${sz}px;border-color:${borderColor};${glow}">
+                     <span class="mm-sym">${isNaval ? svgNav : svgAF}</span>
+                   </div>`,
+            iconSize: [sz, sz],
+            iconAnchor: [sz / 2, sz / 2]
+        });
+    }
+
+    async function init() {
+        const [bases, types] = await Promise.all([
+            api('/api/bases'),
+            api('/api/missile-types')
+        ]);
+        missileTypes = types;
+        allBases = bases;
+
+        // Populate base dropdown (sorted A→Z)
+        const sel = document.getElementById('base-select');
+        [...bases].sort((a, b) => a.base_name.localeCompare(b.base_name)).forEach(b => {
+            const opt = document.createElement('option');
+            opt.value = b.base_id;
+            opt.textContent = `${b.force_type === 'Naval' ? '[N]' : '[AF]'} ${b.base_name}`;
+            sel.appendChild(opt);
+        });
+
+        // Populate missile type dropdown (sorted by name)
+        document.getElementById('m-type').innerHTML = [...types]
+            .sort((a, b) => a.missile_name.localeCompare(b.missile_name))
+            .map(t => `<option value="${t.missile_type_id}">${t.missile_name} (${t.category})</option>`)
+            .join('');
+
+        // Init map
+        mMap = L.map('missile-map', { zoomControl: true, attributionControl: false }).setView([22.5, 80], 4);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 18 }).addTo(mMap);
+
+        mMarkers = {};
+        bases.forEach(b => {
+            const marker = L.marker([b.latitude, b.longitude], { icon: makeIcon(b, false) })
+                .bindTooltip(b.base_name, { className: 'mtt' }).addTo(mMap);
+            marker.on('click', () => {
+                document.getElementById('base-select').value = b.base_id;
+                loadMissiles();
+            });
+            mMarkers[b.base_id] = { marker, base: b };
+        });
+        setTimeout(() => mMap.invalidateSize(), 100);
+        loadMissiles();
+
+        // If navigated here via ?global=1 (nav sub-link), switch to global view
+        if (new URLSearchParams(window.location.search).get('global') === '1') {
+            document.getElementById('base-select').value = '';
+            loadMissiles();
+        }
+    }
+
+    async function loadMissiles() {
+        const baseId = document.getElementById('base-select').value;
+
+        // Update map highlight using divIcon
+        Object.entries(mMarkers).forEach(([id, { marker, base }]) => {
+            marker.setIcon(makeIcon(base, parseInt(id) === parseInt(baseId)));
+        });
+        if (baseId && mMarkers[baseId]) {
+            mMap.setView(mMarkers[baseId].marker.getLatLng(), 8, { animate: true });
+            mMarkers[baseId].marker.openTooltip();
+        }
+
+        if (!baseId) {
+            document.getElementById('missile-placeholder').style.display = 'block';
+            document.getElementById('missile-table-wrap').style.display = 'none';
+            document.getElementById('btn-add-missile').style.display = 'none';
+            await loadGlobalMissiles();
+            return;
+        }
+
+        const det = await api(`/api/base/${baseId}/details`);
+        const missiles = [...(det.missiles || [])].sort((a, b) => a.quantity - b.quantity);
+
+        document.getElementById('missile-placeholder').style.display = 'none';
+        document.getElementById('missile-table-wrap').style.display = 'block';
+        document.getElementById('btn-add-missile').style.display = 'inline-flex';
+
+        const hasWarning = missiles.some(m => m.quantity < 5);
+        document.getElementById('missile-warning').style.display = hasWarning ? 'inline-flex' : 'none';
+
+        document.getElementById('missile-body').innerHTML = missiles.length === 0
+            ? '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">No missiles at this base</td></tr>'
+            : missiles.map(m => `
+        <tr class="${m.quantity < 5 ? 'warning' : ''}">
+            <td style="font-weight:600;color:var(--text);">${m.missile_name}</td>
+            <td>${m.category}</td>
+            <td style="font-family:'JetBrains Mono',monospace;">${m.max_range}</td>
+            <td>
+                <span style="font-family:'JetBrains Mono',monospace;font-weight:700;${m.quantity < 5 ? 'color:var(--red);' : 'color:var(--cyan);'}">${m.quantity}</span>
+                ${m.quantity < 5 ? '<span class="badge badge-red" style="margin-left:6px;">LOW</span>' : ''}
+            </td>
+            <td>${statusBadge(m.operational_status)}</td>
+            <td>
+                <button class="btn btn-ghost btn-sm" onclick="editMissile(${m.missile_type_id}, ${m.quantity}, '${m.operational_status}')">Edit</button>
+            </td>
+        </tr>
+    `).join('');
+    }
+
+    async function loadGlobalMissiles() {
+        const data = await api('/api/inventory/missiles/all');
+        const container = document.getElementById('global-missile-container');
+
+        if (data.length === 0) {
+            container.innerHTML = '<div class="card" style="text-align:center;color:var(--muted);">No missile data available</div>';
+            return;
+        }
+
+        // Group by base_id
+        const grouped = {};
+        data.forEach(m => {
+            const key = m.base_id;
+            if (!grouped[key]) grouped[key] = { base_name: m.base_name, base_id: m.base_id, missiles: [] };
+            grouped[key].missiles.push(m);
+        });
+
+        // Sort bases by lowest-quantity missile first (most critical base first)
+        let html = '';
+        Object.values(grouped)
+            .sort((a, b) => Math.min(...a.missiles.map(m => m.quantity)) - Math.min(...b.missiles.map(m => m.quantity)))
+            .forEach(group => {
+                group.missiles.sort((a, b) => a.quantity - b.quantity);
+                const bid = group.base_id;
+                const bname = group.base_name;
+
+                html += `
+            <div class="card" style="padding:0;">
+                <div style="padding:14px 20px; border-bottom:1px solid var(--border-dim); background:rgba(0,0,0,0.2);
+                            display:flex; justify-content:space-between; align-items:center;
+                            cursor:pointer;" onclick="highlightBase(${bid})">
+                    <span style="font-weight:700; color:var(--cyan); font-size:15px;">📍 ${bname}</span>
+                    <button class="btn btn-primary btn-sm" style="font-size:11px;padding:4px 10px;"
+                        onclick="event.stopPropagation(); openAddForBase(${bid}, '${bname.replace(/'/g, "\\'")}')">+ Add Missile</button>
+                </div>
+                <div class="tbl-wrap" style="border:none; border-radius:0;">
+                    <table class="data-table">
+                        <thead>
+                            <tr>
+                                <th>Missile Name</th>
+                                <th>Category</th>
+                                <th>Quantity</th>
+                                <th>Status</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${group.missiles.map(m => `
+                            <tr class="${m.quantity < 5 ? 'warning' : ''}">
+                                <td style="font-weight:600;color:var(--text);">${m.missile_name}</td>
+                                <td><span class="badge badge-cyan">${m.category}</span></td>
+                                <td>
+                                    <span style="font-family:'JetBrains Mono',monospace;font-weight:700;${m.quantity < 5 ? 'color:var(--red);' : 'color:var(--cyan);'}"
+                                    >${m.quantity}</span>
+                                    ${m.quantity < 5 ? '<span class="badge badge-red" style="margin-left:6px;">LOW</span>' : ''}
+                                </td>
+                                <td>${statusBadge(m.operational_status)}</td>
+                                <td>
+                                    <button class="btn btn-ghost btn-sm"
+                                        onclick="openEditForBase(${bid}, '${bname.replace(/'/g, "\\'")}',${m.missile_type_id}, ${m.quantity}, '${m.operational_status}')"
+                                    >Edit</button>
+                                </td>
+                            </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            </div>`;
+            });
+        container.innerHTML = html;
+    }
+
+    function highlightBase(baseId) {
+        const entry = mMarkers[baseId];
+        if (!entry) return;
+        Object.entries(mMarkers).forEach(([id, { marker, base }]) => marker.setIcon(makeIcon(base, false)));
+        entry.marker.setIcon(makeIcon(entry.base, true));
+        mMap.setView(entry.marker.getLatLng(), 8, { animate: true });
+        entry.marker.openTooltip();
+        document.getElementById('base-select').value = baseId;
+    }
+
+    function openAddForBase(baseId, baseName) {
+        document.getElementById('m-modal-title').textContent = `Add Missile — ${baseName}`;
+        document.getElementById('m-base-id').value = baseId;
+        document.getElementById('m-type').disabled = false;
+        document.getElementById('m-type').selectedIndex = 0;
+        document.getElementById('m-qty').value = '';
+        document.getElementById('m-status').selectedIndex = 0;
+        openModal('add-missile-modal');
+    }
+
+    function openEditForBase(baseId, baseName, typeId, qty, status) {
+        document.getElementById('m-modal-title').textContent = `Edit Missile — ${baseName}`;
+        document.getElementById('m-base-id').value = baseId;
+        const sel = document.getElementById('m-type');
+        sel.disabled = false;
+        sel.value = String(typeId);
+        // Fallback: find the matching option explicitly
+        if (sel.value !== String(typeId)) {
+            for (let i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].value == typeId) { sel.selectedIndex = i; break; }
+            }
+        }
+        document.getElementById('m-qty').value = qty;
+        document.getElementById('m-status').value = status;
+        openModal('add-missile-modal');
+    }
+
+    function editMissile(typeId, qty, status) {
+        const baseId = document.getElementById('base-select').value;
+        const baseName = allBases.find(b => b.base_id == baseId)?.base_name || 'Base';
+        document.getElementById('m-modal-title').textContent = `Edit Missile — ${baseName}`;
+        document.getElementById('m-base-id').value = baseId;
+        const sel = document.getElementById('m-type');
+        sel.disabled = false;
+        sel.value = String(typeId);
+        // Fallback: find the matching option explicitly
+        if (sel.value !== String(typeId)) {
+            for (let i = 0; i < sel.options.length; i++) {
+                if (sel.options[i].value == typeId) { sel.selectedIndex = i; break; }
+            }
+        }
+        document.getElementById('m-qty').value = qty;
+        document.getElementById('m-status').value = status;
+        openModal('add-missile-modal');
+    }
+
+    async function saveMissile(e) {
+        e.preventDefault();
+        const baseId = document.getElementById('m-base-id').value
+            || document.getElementById('base-select').value;
+        if (!baseId) { showToast('No base selected', 'error'); return; }
+
+        const qty = parseInt(document.getElementById('m-qty').value);
+        if (isNaN(qty) || qty <= 0) { showToast('Quantity must be a positive number', 'error'); return; }
+
+        try {
+            await api(`/api/base/${baseId}/inventory/missile`, {
+                method: 'POST',
+                body: {
+                    missile_type_id: parseInt(document.getElementById('m-type').value),
+                    quantity: qty,
+                    operational_status: document.getElementById('m-status').value
+                }
+            });
+            showToast('Missile inventory updated', 'success');
+            closeModal('add-missile-modal');
+            loadMissiles();
+        } catch(e) {
+            // api() already shows error toast
+        }
+    }
+
+    init();
+</script>
+{% endblock %}

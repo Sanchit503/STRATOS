@@ -1,0 +1,237 @@
+{% extends "layout.html" %}
+{% block title %}Enemy Intelligence{% endblock %}
+{% block page_title %}☠️ Enemy Base Intelligence{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+{% endblock %}
+
+{% block header_actions %}
+<button class="btn btn-danger" onclick="openModal('add-enemy-modal')">+ Add Enemy Base</button>
+{% endblock %}
+
+{% block content %}
+<div class="grid-2-1">
+    <div>
+        <div class="tbl-wrap">
+            <div class="tbl-toolbar">
+                <div class="tbl-filters">
+                    <select class="select" id="flt-threat" onchange="filterEnemies()">
+                        <option value="">All Threat Levels</option>
+                        <option value="Critical">Critical</option>
+                        <option value="High">High</option>
+                        <option value="Medium">Medium</option>
+                        <option value="Low">Low</option>
+                    </select>
+                    <input class="input" id="flt-search" placeholder="Search enemy bases..." oninput="filterEnemies()"
+                        style="width:180px;">
+                </div>
+                <span style="font-size:11px;color:var(--muted);" id="enemy-count"></span>
+            </div>
+            <div style="overflow-x:auto;max-height:calc(100vh - 260px);overflow-y:auto;">
+                <table class="data-table">
+                    <thead>
+                        <tr>
+                            <th>Base Name</th>
+                            <th>Coordinates</th>
+                            <th>Threat Level</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="enemy-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Mini Map -->
+    <div>
+        <div class="card" style="padding:0;overflow:hidden;position:sticky;top:80px;">
+            <div id="enemy-map" style="height:calc(100vh - 160px);min-height:400px;"></div>
+        </div>
+    </div>
+</div>
+
+<!-- Add/Edit Enemy Modal -->
+<div class="modal-overlay" id="add-enemy-modal">
+    <div class="modal">
+        <div class="modal-title">
+            <span id="e-modal-title">Add Enemy Base</span>
+            <button class="modal-close" onclick="closeModal('add-enemy-modal')">✕</button>
+        </div>
+        <form onsubmit="saveEnemy(event)">
+            <input type="hidden" id="e-id">
+            <div class="form-group">
+                <label class="form-label">Base Name</label>
+                <input class="form-input" id="e-name" required>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Latitude</label>
+                    <input class="form-input" id="e-lat" type="number" step="any" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Longitude</label>
+                    <input class="form-input" id="e-lng" type="number" step="any" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Threat Level</label>
+                <select class="form-input" id="e-threat">
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Critical">Critical</option>
+                </select>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;">
+                <button type="button" class="btn btn-ghost" onclick="closeModal('add-enemy-modal')">Cancel</button>
+                <button type="submit" class="btn btn-danger">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal-overlay" id="del-enemy-modal">
+    <div class="modal" style="max-width:400px;">
+        <div class="modal-title">
+            <span>⚠️ Delete Enemy Base</span>
+            <button class="modal-close" onclick="closeModal('del-enemy-modal')">✕</button>
+        </div>
+        <p style="font-size:13px;color:var(--dim);margin-bottom:16px;">Permanently remove this enemy base from
+            intelligence records?</p>
+        <div style="display:flex;justify-content:flex-end;gap:10px;">
+            <button class="btn btn-ghost" onclick="closeModal('del-enemy-modal')">Cancel</button>
+            <button class="btn btn-danger" onclick="confirmDeleteEnemy()">Delete</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+    let allEnemies = [];
+    let enemyMap, markersLayer;
+    let deleteEnemyId = null;
+
+    async function loadEnemies() {
+        allEnemies = await api('/api/enemy-bases');
+        filterEnemies();
+        renderMap();
+    }
+
+    function filterEnemies() {
+        const threat = document.getElementById('flt-threat').value;
+        const q = document.getElementById('flt-search').value.toLowerCase();
+        let f = allEnemies;
+        if (threat) f = f.filter(e => e.threat_level === threat);
+        if (q) f = f.filter(e => e.enemy_base_name.toLowerCase().includes(q));
+
+        document.getElementById('enemy-count').textContent = `${f.length} bases`;
+        document.getElementById('enemy-body').innerHTML = f.map(e => `
+        <tr onclick="focusEnemy(${e.latitude}, ${e.longitude})" style="cursor:pointer;">
+            <td style="font-weight:600;color:var(--text);">☠️ ${e.enemy_base_name}</td>
+            <td style="font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);">${e.latitude.toFixed(4)}, ${e.longitude.toFixed(4)}</td>
+            <td>${threatBadge(e.threat_level)}</td>
+            <td>
+                <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();editEnemy(${e.enemy_base_id})">Edit</button>
+                <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();deleteEnemy(${e.enemy_base_id})">Del</button>
+            </td>
+        </tr>
+    `).join('');
+    }
+
+    function renderMap() {
+        if (!enemyMap) {
+            enemyMap = L.map('enemy-map', { zoomControl: true, attributionControl: false }).setView([30, 78], 4);
+            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { maxZoom: 18 }).addTo(enemyMap);
+        }
+        if (markersLayer) markersLayer.clearLayers();
+        markersLayer = L.layerGroup().addTo(enemyMap);
+
+        const colors = { 'Critical': '#ff2020', 'High': '#fb923c', 'Medium': '#fbbf24', 'Low': '#94a3b8' };
+        allEnemies.forEach(e => {
+            const c = colors[e.threat_level] || '#94a3b8';
+            L.circleMarker([e.latitude, e.longitude], {
+                radius: e.threat_level === 'Critical' ? 8 : e.threat_level === 'High' ? 6 : 5,
+                color: c, fillColor: c, fillOpacity: 0.7, weight: 1
+            }).bindTooltip(`☠️ ${e.enemy_base_name} (${e.threat_level})`, { className: 'mtt' })
+                .addTo(markersLayer);
+        });
+    }
+
+    function focusEnemy(lat, lng) {
+        if (enemyMap) enemyMap.setView([lat, lng], 8, { animate: true });
+    }
+
+    function editEnemy(id) {
+        const e = allEnemies.find(x => x.enemy_base_id === id);
+        if (!e) return;
+        document.getElementById('e-modal-title').textContent = 'Edit Enemy Base';
+        document.getElementById('e-id').value = e.enemy_base_id;
+        document.getElementById('e-name').value = e.enemy_base_name;
+        document.getElementById('e-lat').value = e.latitude;
+        document.getElementById('e-lng').value = e.longitude;
+        document.getElementById('e-threat').value = e.threat_level;
+        openModal('add-enemy-modal');
+    }
+
+    function deleteEnemy(id) { deleteEnemyId = id; openModal('del-enemy-modal'); }
+
+    async function confirmDeleteEnemy() {
+        if (!deleteEnemyId) return;
+        try {
+            await api(`/api/enemy-base/${deleteEnemyId}`, { method: 'DELETE' });
+            showToast('Enemy base deleted', 'success');
+            closeModal('del-enemy-modal');
+            deleteEnemyId = null;
+            loadEnemies();
+        } catch(e) {
+            if (e.message && e.message.includes('existing simulations')) {
+                closeModal('del-enemy-modal');
+                if (confirm('This enemy base has linked attack simulations. Delete ALL associated data?')) {
+                    try {
+                        await api(`/api/enemy-base/${deleteEnemyId}?force=true`, { method: 'DELETE' });
+                        showToast('Enemy base and simulations deleted', 'success');
+                        deleteEnemyId = null;
+                        loadEnemies();
+                    } catch(e2) { /* api() shows toast */ }
+                }
+            }
+        }
+    }
+
+    async function saveEnemy(e) {
+        e.preventDefault();
+        const id = document.getElementById('e-id').value;
+        const name = document.getElementById('e-name').value.trim();
+        const lat = parseFloat(document.getElementById('e-lat').value);
+        const lng = parseFloat(document.getElementById('e-lng').value);
+
+        // Client-side validation
+        if (!name) { showToast('Enemy base name is required', 'error'); return; }
+        if (isNaN(lat) || lat < -90 || lat > 90) { showToast('Latitude must be between -90 and 90', 'error'); return; }
+        if (isNaN(lng) || lng < -180 || lng > 180) { showToast('Longitude must be between -180 and 180', 'error'); return; }
+
+        const body = {
+            enemy_base_name: name,
+            latitude: lat,
+            longitude: lng,
+            threat_level: document.getElementById('e-threat').value
+        };
+        try {
+            if (id) await api(`/api/enemy-base/${id}`, { method: 'PUT', body });
+            else await api('/api/enemy-bases', { method: 'POST', body });
+            showToast('Enemy base saved', 'success');
+            closeModal('add-enemy-modal');
+            document.getElementById('e-id').value = '';
+            loadEnemies();
+        } catch(e) {
+            // api() already shows error toast
+        }
+    }
+
+    loadEnemies();
+</script>
+{% endblock %}

@@ -1,0 +1,261 @@
+{% extends "layout.html" %}
+{% block title %}Base Management{% endblock %}
+{% block page_title %}🏛️ Base Management{% endblock %}
+
+{% block header_actions %}
+<button class="btn btn-primary" onclick="openModal('add-modal')">+ Add Base</button>
+{% endblock %}
+
+{% block content %}
+<div class="tbl-wrap">
+    <div class="tbl-toolbar">
+        <div class="tbl-filters">
+            <select class="select" id="flt-type" onchange="filterBases()">
+                <option value="">All Force Types</option>
+                <option value="Air Force">Air Force</option>
+                <option value="Naval">Naval</option>
+            </select>
+            <select class="select" id="flt-status" onchange="filterBases()">
+                <option value="">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Under Maintenance">Under Maintenance</option>
+                <option value="Inactive">Inactive</option>
+            </select>
+            <input class="input" id="flt-search" placeholder="Search bases..." oninput="filterBases()"
+                style="width:180px;">
+        </div>
+        <span style="font-size:11px;color:var(--muted);" id="base-count"></span>
+    </div>
+    <div style="overflow-x:auto;">
+        <table class="data-table" id="bases-table">
+            <thead>
+                <tr>
+                    <th>Base Name</th>
+                    <th>Force Type</th>
+                    <th>Capability</th>
+                    <th>Status</th>
+                    <th>Strength</th>
+                    <th>Personnel</th>
+                    <th>Vehicles</th>
+                    <th>Readiness</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="bases-body"></tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="add-modal">
+    <div class="modal">
+        <div class="modal-title">
+            <span id="modal-title-text">Add New Base</span>
+            <button class="modal-close" onclick="closeModal('add-modal')">✕</button>
+        </div>
+        <form id="base-form" onsubmit="saveBase(event)">
+            <input type="hidden" id="f-id">
+            <div class="form-group">
+                <label class="form-label">Base Name</label>
+                <input class="form-input" id="f-name" required>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Force Type</label>
+                    <select class="form-input" id="f-force">
+                        <option value="Air Force">Air Force</option>
+                        <option value="Naval">Naval</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Status</label>
+                    <select class="form-input" id="f-status">
+                        <option value="Active">Active</option>
+                        <option value="Under Maintenance">Under Maintenance</option>
+                        <option value="Inactive">Inactive</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Latitude</label>
+                    <input class="form-input" id="f-lat" type="number" step="any" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Longitude</label>
+                    <input class="form-input" id="f-lng" type="number" step="any" required>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Operational Capability</label>
+                    <select class="form-input" id="f-cap">
+                        <option value="Offensive">Offensive</option>
+                        <option value="Defensive">Defensive</option>
+                        <option value="Logistics">Logistics</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Strength</label>
+                    <input class="form-input" id="f-strength" type="number" min="0" required>
+                </div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;">
+                <button type="button" class="btn btn-ghost" onclick="closeModal('add-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save Base</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Delete Confirmation -->
+<div class="modal-overlay" id="del-modal">
+    <div class="modal" style="max-width:400px;">
+        <div class="modal-title">
+            <span>⚠️ Delete Base</span>
+            <button class="modal-close" onclick="closeModal('del-modal')">✕</button>
+        </div>
+        <p style="font-size:13px;color:var(--dim);margin-bottom:16px;">This will <strong
+                style="color:var(--red);">permanently delete</strong> this base and all associated personnel, vehicles,
+            missiles, readiness reports, and inventory. This action cannot be undone.</p>
+        <div style="display:flex;justify-content:flex-end;gap:10px;">
+            <button class="btn btn-ghost" onclick="closeModal('del-modal')">Cancel</button>
+            <button class="btn btn-danger" id="del-confirm" onclick="confirmDelete()">Delete Base</button>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let allBases = [];
+    let deleteId = null;
+
+    async function loadBases() {
+        allBases = await api('/api/bases/full');
+        filterBases();
+    }
+
+    function filterBases() {
+        const type = document.getElementById('flt-type').value;
+        const status = document.getElementById('flt-status').value;
+        const q = document.getElementById('flt-search').value.toLowerCase();
+
+        const readinessOrder = { 'Critical': 0, 'Vulnerable': 1, 'Ready with Support': 2, 'Fully Ready': 3 };
+
+        let filtered = allBases;
+        if (type) filtered = filtered.filter(b => b.force_type === type);
+        if (status) filtered = filtered.filter(b => b.status === status);
+        if (q) filtered = filtered.filter(b => b.base_name.toLowerCase().includes(q));
+
+        // Sort: Critical first → Vulnerable → Ready with Support → Fully Ready
+        filtered = [...filtered].sort((a, b) =>
+            (readinessOrder[a.overall_readiness] ?? 4) - (readinessOrder[b.overall_readiness] ?? 4)
+        );
+
+        document.getElementById('base-count').textContent = `${filtered.length} bases`;
+        document.getElementById('bases-body').innerHTML = filtered.map(b => `
+        <tr>
+            <td style="font-weight:600;color:var(--text);">${b.force_type === 'Naval' ? '⚓' : '✈️'} ${b.base_name}</td>
+            <td>${statusBadge(b.force_type === 'Naval' ? 'Naval' : 'Air Force').replace(b.force_type === 'Naval' ? 'Naval' : 'Air Force', b.force_type)}</td>
+            <td style="color:var(--dim)">${b.operational_capability || '—'}</td>
+            <td>${statusBadge(b.status)}</td>
+            <td style="font-family:'JetBrains Mono',monospace;font-weight:600;">${fmt(b.strength)}</td>
+            <td style="font-family:'JetBrains Mono',monospace;">${b.personnel_count || 0}</td>
+            <td style="font-family:'JetBrains Mono',monospace;">${b.vehicle_count || 0}</td>
+            <td>${readinessBadge(b.overall_readiness)}</td>
+            <td>
+                <button class="btn btn-ghost btn-sm" onclick="editBase(${b.base_id})">Edit</button>
+                <button class="btn btn-danger btn-sm" onclick="deleteBase(${b.base_id})">Del</button>
+            </td>
+        </tr>
+    `).join('');
+    }
+
+    function editBase(id) {
+        const b = allBases.find(x => x.base_id === id);
+        if (!b) return;
+        document.getElementById('modal-title-text').textContent = 'Edit Base';
+        document.getElementById('f-id').value = b.base_id;
+        document.getElementById('f-name').value = b.base_name;
+        document.getElementById('f-force').value = b.force_type;
+        document.getElementById('f-status').value = b.status;
+        document.getElementById('f-lat').value = b.latitude;
+        document.getElementById('f-lng').value = b.longitude;
+        document.getElementById('f-cap').value = b.operational_capability || 'Offensive';
+        document.getElementById('f-strength').value = b.strength;
+        openModal('add-modal');
+    }
+
+    function deleteBase(id) {
+        deleteId = id;
+        openModal('del-modal');
+    }
+
+    async function confirmDelete() {
+        if (!deleteId) return;
+        try {
+            await api(`/api/base/${deleteId}`, { method: 'DELETE' });
+            showToast('Base deleted successfully', 'success');
+            closeModal('del-modal');
+            deleteId = null;
+            loadBases();
+        } catch(e) {
+            // If cascade protection triggered, ask for force-delete
+            if (e.message && e.message.includes('existing inventory')) {
+                closeModal('del-modal');
+                if (confirm('This base has linked personnel, vehicles, or missiles. Delete ALL associated data?')) {
+                    try {
+                        await api(`/api/base/${deleteId}?force=true`, { method: 'DELETE' });
+                        showToast('Base and all associated data deleted', 'success');
+                        deleteId = null;
+                        loadBases();
+                    } catch(e2) { /* api() shows toast */ }
+                }
+            }
+        }
+    }
+
+    async function saveBase(e) {
+        e.preventDefault();
+        const id = document.getElementById('f-id').value;
+        const name = document.getElementById('f-name').value.trim();
+        const lat = parseFloat(document.getElementById('f-lat').value);
+        const lng = parseFloat(document.getElementById('f-lng').value);
+        const strength = parseInt(document.getElementById('f-strength').value);
+
+        // Client-side validation
+        if (!name) { showToast('Base name is required', 'error'); return; }
+        if (isNaN(lat) || lat < -90 || lat > 90) { showToast('Latitude must be between -90 and 90', 'error'); return; }
+        if (isNaN(lng) || lng < -180 || lng > 180) { showToast('Longitude must be between -180 and 180', 'error'); return; }
+        if (isNaN(strength) || strength < 0) { showToast('Strength must be a non-negative number', 'error'); return; }
+
+        const body = {
+            base_name: name,
+            force_type: document.getElementById('f-force').value,
+            status: document.getElementById('f-status').value,
+            latitude: lat,
+            longitude: lng,
+            operational_capability: document.getElementById('f-cap').value,
+            strength: strength
+        };
+
+        try {
+            if (id) {
+                await api(`/api/base/${id}`, { method: 'PUT', body });
+            } else {
+                await api('/api/bases', { method: 'POST', body });
+            }
+            showToast('Base saved successfully', 'success');
+            closeModal('add-modal');
+            document.getElementById('f-id').value = '';
+            document.getElementById('modal-title-text').textContent = 'Add New Base';
+            loadBases();
+        } catch(e) {
+            // api() already shows error toast
+        }
+    }
+
+    loadBases();
+</script>
+{% endblock %}

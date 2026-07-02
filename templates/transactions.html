@@ -1,0 +1,1181 @@
+{% extends "layout.html" %}
+{% block title %}DB Transactions{% endblock %}
+{% block page_title %}⚡ Database Transactions{% endblock %}
+
+{% block head %}
+<style>
+/* ── Page layout ─────────────────────────────────────────── */
+.tx-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+}
+
+/* ── Transaction Card ────────────────────────────────────── */
+.tx-card {
+    background: var(--bg-panel);
+    backdrop-filter: var(--glass-blur);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--r);
+    overflow: hidden;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    transition: var(--t);
+}
+.tx-card:hover {
+    border-color: rgba(0,240,255,0.15);
+}
+
+/* ── Card Header ─────────────────────────────────────────── */
+.tx-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 28px;
+    background: rgba(0,0,0,0.25);
+    border-bottom: 1px solid var(--border-dim);
+    gap: 16px;
+    flex-wrap: wrap;
+    cursor: pointer;
+    user-select: none;
+}
+.tx-header-left { display: flex; align-items: center; gap: 16px; }
+.tx-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    padding: 5px 12px;
+    border-radius: var(--rpill);
+    border: 1px solid;
+    white-space: nowrap;
+}
+.tx-badge.normal   { color: var(--green);  border-color: rgba(0,255,170,0.4);  background: rgba(0,255,170,0.08); }
+.tx-badge.conflict { color: var(--orange); border-color: rgba(255,85,0,0.4);   background: rgba(255,85,0,0.08); }
+.tx-badge.fix      { color: var(--cyan);   border-color: rgba(0,240,255,0.4);  background: rgba(0,240,255,0.08); }
+.tx-badge.rollback-type { color: var(--red); border-color: rgba(255,51,102,0.4); background: rgba(255,51,102,0.08); }
+.tx-title { font-size: 16px; font-weight: 700; color: var(--text); }
+.tx-subtitle { font-size: 12px; color: var(--muted); margin-top: 3px; }
+.tx-header-right { display: flex; align-items: center; gap: 12px; }
+
+/* ── Run Button ──────────────────────────────────────────── */
+.btn-run {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 22px;
+    border-radius: var(--rpill);
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    border: none;
+    transition: var(--t);
+    font-family: 'Outfit', sans-serif;
+}
+.btn-run.green  { background: rgba(0,255,170,0.15); color: var(--green);  border: 1px solid rgba(0,255,170,0.3); }
+.btn-run.orange { background: rgba(255,85,0,0.15);  color: var(--orange); border: 1px solid rgba(255,85,0,0.3);  }
+.btn-run.cyan   { background: rgba(0,240,255,0.15); color: var(--cyan);   border: 1px solid rgba(0,240,255,0.3); }
+.btn-run.red    { background: rgba(255,51,102,0.15); color: var(--red);   border: 1px solid rgba(255,51,102,0.3); }
+.btn-run:hover  { transform: translateY(-1px); filter: brightness(1.2); }
+.btn-run:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+/* ── Status pill ─────────────────────────────────────────── */
+.tx-status {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    padding: 4px 12px;
+    border-radius: var(--rpill);
+    border: 1px solid;
+}
+.tx-status.committed   { color: var(--green);  border-color: rgba(0,255,170,0.3);  background: rgba(0,255,170,0.08); }
+.tx-status.anomaly     { color: var(--red);    border-color: rgba(255,51,102,0.3);  background: rgba(255,51,102,0.08); }
+.tx-status.deadlock    { color: var(--orange); border-color: rgba(255,85,0,0.3);    background: rgba(255,85,0,0.08); }
+.tx-status.resolved    { color: var(--cyan);   border-color: rgba(0,240,255,0.3);  background: rgba(0,240,255,0.08); }
+.tx-status.dirty_read  { color: var(--red);    border-color: rgba(255,51,102,0.3);  background: rgba(255,51,102,0.08); }
+.tx-status.partial_commit { color: var(--yellow); border-color: rgba(255,184,0,0.3); background: rgba(255,184,0,0.08); }
+.tx-status.rolled_back { color: var(--red);    border-color: rgba(255,51,102,0.3);  background: rgba(255,51,102,0.08); }
+.tx-status.pending     { color: var(--muted);  border-color: var(--glass-border);   background: transparent; }
+
+/* ── Collapse arrow ──────────────────────────────────────── */
+.tx-arrow { font-size: 12px; color: var(--muted); transition: transform 0.3s; }
+.tx-card.open .tx-arrow { transform: rotate(180deg); }
+
+/* ── Scenario description ────────────────────────────────── */
+.tx-scenario {
+    padding: 18px 28px;
+    border-bottom: 1px solid var(--border-dim);
+    font-size: 13px;
+    color: var(--dim);
+    line-height: 1.7;
+    background: rgba(0,0,0,0.1);
+}
+.tx-scenario strong { color: var(--text); }
+
+/* ── Body (collapsible) ──────────────────────────────────── */
+.tx-body {
+    display: none;
+    padding: 24px 28px;
+    flex-direction: column;
+    gap: 24px;
+}
+.tx-card.open .tx-body { display: flex; }
+
+/* ── Section label ───────────────────────────────────────── */
+.sec-label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--muted);
+    margin-bottom: 10px;
+}
+
+/* ── Results grid ────────────────────────────────────────── */
+.tx-results {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+@media (max-width: 900px) { .tx-results { grid-template-columns: 1fr; } }
+
+/* ── Mini table container ────────────────────────────────── */
+.mini-tbl-wrap {
+    background: rgba(0,0,0,0.2);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--rsm);
+    overflow: hidden;
+}
+.mini-tbl-title {
+    padding: 10px 16px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--dim);
+    background: rgba(0,0,0,0.25);
+    border-bottom: 1px solid var(--glass-border);
+    letter-spacing: 0.5px;
+}
+.mini-tbl {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+}
+.mini-tbl th {
+    padding: 8px 14px;
+    text-align: left;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--muted);
+    background: rgba(0,0,0,0.2);
+    border-bottom: 1px solid var(--glass-border);
+    white-space: nowrap;
+}
+.mini-tbl td {
+    padding: 9px 14px;
+    border-bottom: 1px solid rgba(255,255,255,0.03);
+    color: var(--text);
+    white-space: nowrap;
+}
+.mini-tbl tr:last-child td { border-bottom: none; }
+
+/* ── Diff highlighting ───────────────────────────────────── */
+.diff-up {
+    color: var(--green) !important;
+    font-weight: 700;
+    position: relative;
+}
+.diff-up::after {
+    content: ' ▲';
+    font-size: 9px;
+    opacity: 0.7;
+}
+.diff-down {
+    color: var(--red) !important;
+    font-weight: 700;
+    position: relative;
+}
+.diff-down::after {
+    content: ' ▼';
+    font-size: 9px;
+    opacity: 0.7;
+}
+.diff-new {
+    color: var(--cyan) !important;
+    font-weight: 700;
+}
+.diff-same {
+    color: var(--muted) !important;
+}
+
+/* ── Steps log ───────────────────────────────────────────── */
+.steps-log {
+    background: rgba(0,0,0,0.35);
+    border: 1px solid var(--glass-border);
+    border-radius: var(--rsm);
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.step-line {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--dim);
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    line-height: 1.5;
+}
+.step-line .step-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--cyan);
+    margin-top: 5px;
+    flex-shrink: 0;
+}
+.step-line.commit .step-dot  { background: var(--green); box-shadow: 0 0 6px var(--green); }
+.step-line.rollback .step-dot { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+.step-line.savepoint .step-dot { background: var(--yellow); box-shadow: 0 0 6px var(--yellow); }
+.step-line.warn .step-dot { background: var(--orange); box-shadow: 0 0 6px var(--orange); }
+.step-line.blocked .step-dot { background: var(--purple); }
+.step-line .step-text { color: var(--text); }
+.step-line .step-text em { color: var(--muted); font-style: normal; }
+
+/* ── Effect box ──────────────────────────────────────────── */
+.effect-box {
+    background: rgba(0,240,255,0.04);
+    border: 1px solid rgba(0,240,255,0.12);
+    border-radius: var(--rsm);
+    padding: 16px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+.effect-box.anomaly {
+    background: rgba(255,51,102,0.04);
+    border-color: rgba(255,51,102,0.15);
+}
+.effect-box.resolved {
+    background: rgba(0,240,255,0.04);
+    border-color: rgba(0,240,255,0.15);
+}
+.effect-line {
+    font-size: 12px;
+    color: var(--dim);
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    line-height: 1.6;
+}
+.effect-line::before { content: '→'; color: var(--cyan); flex-shrink: 0; font-family: monospace; }
+.effect-box.anomaly .effect-line::before { color: var(--red); }
+
+/* ── Loading spinner ─────────────────────────────────────── */
+.tx-spinner {
+    display: none;
+    width: 18px; height: 18px;
+    border: 2px solid rgba(255,255,255,0.1);
+    border-top-color: var(--cyan);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ── Snapshot section ────────────────────────────────────── */
+.snap-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 16px;
+}
+
+/* ── Empty state ─────────────────────────────────────────── */
+.tx-empty {
+    text-align: center;
+    padding: 32px;
+    color: var(--muted);
+    font-size: 13px;
+}
+
+/* ── Problem → Solution pair wrapper ─────────────────────── */
+.tx-pair {
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: calc(var(--r) + 4px);
+    overflow: hidden;
+    position: relative;
+}
+
+/* ── SQL Chain block ─────────────────────────────────────── */
+.sql-chain {
+    background: rgba(0,0,0,0.4);
+    border: 1px solid rgba(0,240,255,0.1);
+    border-radius: var(--rsm);
+    overflow: hidden;
+}
+.sql-chain-title {
+    padding: 10px 16px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--cyan);
+    background: rgba(0,240,255,0.05);
+    border-bottom: 1px solid rgba(0,240,255,0.1);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.sql-chain-body {
+    padding: 14px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    counter-reset: sql-line;
+}
+.sql-line {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    color: var(--dim);
+    line-height: 1.7;
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    counter-increment: sql-line;
+}
+.sql-line::before {
+    content: counter(sql-line);
+    color: rgba(255,255,255,0.15);
+    min-width: 18px;
+    text-align: right;
+    font-size: 11px;
+    flex-shrink: 0;
+    padding-top: 1px;
+}
+.sql-line .kw { color: #c792ea; font-weight: 700; }
+.sql-line .fn { color: #82aaff; }
+.sql-line .str { color: #c3e88d; }
+.sql-line .num { color: #f78c6c; }
+.sql-line .tbl { color: #ffcb6b; }
+.sql-line .cmt { color: rgba(255,255,255,0.25); font-style: italic; }
+.sql-line .sess-a { color: var(--green); font-weight: 700; }
+.sql-line .sess-b { color: var(--orange); font-weight: 700; }
+.tx-pair-label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 24px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--muted);
+    background: rgba(0,0,0,0.3);
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.tx-pair-label .pair-icon {
+    font-size: 16px;
+}
+.tx-pair-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px;
+    background: rgba(0,0,0,0.2);
+    color: var(--cyan);
+    font-size: 14px;
+    font-weight: 700;
+    letter-spacing: 3px;
+    font-family: 'JetBrains Mono', monospace;
+}
+.tx-pair .tx-card {
+    border-radius: 0;
+    border-left: none;
+    border-right: none;
+}
+.tx-pair .tx-card:first-of-type {
+    border-top: none;
+}
+.tx-pair .tx-card:last-of-type {
+    border-bottom: none;
+}
+
+/* ── Reset button ────────────────────────────────────────── */
+.btn-reset {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    border-radius: var(--rpill);
+    font-size: 12px;
+    font-weight: 700;
+    cursor: pointer;
+    border: 1px solid rgba(255,184,0,0.3);
+    background: rgba(255,184,0,0.1);
+    color: var(--yellow);
+    transition: var(--t);
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.5px;
+}
+.btn-reset:hover {
+    background: rgba(255,184,0,0.2);
+    transform: translateY(-1px);
+}
+.btn-reset:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    transform: none;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── Stat bar ─────────────────────────────────────────── -->
+<div class="stat-grid" style="grid-template-columns: repeat(5, 1fr); margin-bottom:28px;">
+    <div class="stat-card">
+        <div class="stat-label">Total Transactions</div>
+        <div class="stat-value" style="color:var(--cyan); font-size:28px;">8</div>
+        <div class="stat-sub">T1 – T8</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Normal (COMMIT)</div>
+        <div class="stat-value" style="color:var(--green); font-size:28px;">3</div>
+        <div class="stat-sub">T1, T2, T3</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">ROLLBACK</div>
+        <div class="stat-value" style="color:var(--red); font-size:28px;">1</div>
+        <div class="stat-sub">T8</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Conflicting</div>
+        <div class="stat-value" style="color:var(--orange); font-size:28px;">4</div>
+        <div class="stat-sub">T4, T5, T6, T7</div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-label">Executed</div>
+        <div class="stat-value" style="color:var(--yellow); font-size:28px;" id="exec-count">0</div>
+        <div class="stat-sub">
+            <button class="btn-reset" id="btn-reset" onclick="resetDB()">↻ Reset DB</button>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!--  TRANSACTION CARDS                                        -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="tx-grid">
+
+    <!-- ── T1 ── -->
+    <div class="tx-card" id="card-t1">
+        <div class="tx-header" onclick="toggleCard('t1')">
+            <div class="tx-header-left">
+                <span class="tx-badge normal">T1 · COMMIT</span>
+                <div>
+                    <div class="tx-title">Logistics Fuel Transfer</div>
+                    <div class="tx-subtitle">Ambala Air Force Station → Halwara Air Force Station</div>
+                </div>
+            </div>
+            <div class="tx-header-right">
+                <span class="tx-status pending" id="status-t1">PENDING</span>
+                <button class="btn-run green" id="btn-t1" onclick="runTx('t1', event)">
+                    <div class="tx-spinner" id="spin-t1"></div>
+                    ▶ Run Transaction
+                </button>
+                <span class="tx-arrow">▼</span>
+            </div>
+        </div>
+        <div class="tx-scenario">
+            <strong>Scenario:</strong> Halwara AFB (base 3) has critically low Aviation Fuel (status = <em>'Low'</em>).
+            Ambala AFB (base 2) has a surplus. Transfer <strong>400,000 litres</strong> atomically —
+            deduct from Ambala, credit Halwara, update Halwara's status to <em>'Adequate'</em>, and log the transfer.<br>
+            <strong>Tables:</strong> Resource_Inventory (×2), Logistics_Transfer (INSERT) &nbsp;|&nbsp;
+            <strong>ACID property:</strong> Atomicity
+        </div>
+        <div class="tx-body" id="body-t1">
+            <div class="tx-empty">Click <strong>▶ Run Transaction</strong> to execute and see live DB changes.</div>
+        </div>
+    </div>
+
+    <!-- ── T2 ── -->
+    <div class="tx-card" id="card-t2">
+        <div class="tx-header" onclick="toggleCard('t2')">
+            <div class="tx-header-left">
+                <span class="tx-badge normal">T2 · COMMIT</span>
+                <div>
+                    <div class="tx-title">Mission Deployment</div>
+                    <div class="tx-subtitle">Tezpur AFB — Agni-V ballistic strike on enemy base</div>
+                </div>
+            </div>
+            <div class="tx-header-right">
+                <span class="tx-status pending" id="status-t2">PENDING</span>
+                <button class="btn-run green" id="btn-t2" onclick="runTx('t2', event)">
+                    <div class="tx-spinner" id="spin-t2"></div>
+                    ▶ Run Transaction
+                </button>
+                <span class="tx-arrow">▼</span>
+            </div>
+        </div>
+        <div class="tx-scenario">
+            <strong>Scenario:</strong> Tezpur AFB (base 12) executes a ballistic strike simulation against
+            Enemy Base #3. One <strong>Agni-V ICBM</strong> is consumed, the assigned pilot is set to
+            <em>'In Mission'</em>, and the simulation is logged.<br>
+            <strong>Tables:</strong> Missile_Inventory, Personnel, Attack_Simulation &nbsp;|&nbsp;
+            <strong>ACID property:</strong> Consistency
+        </div>
+        <div class="tx-body" id="body-t2">
+            <div class="tx-empty">Click <strong>▶ Run Transaction</strong> to execute and see live DB changes.</div>
+        </div>
+    </div>
+
+    <!-- ── T3 ── -->
+    <div class="tx-card" id="card-t3">
+        <div class="tx-header" onclick="toggleCard('t3')">
+            <div class="tx-header-left">
+                <span class="tx-badge normal">T3 · SAVEPOINT</span>
+                <div>
+                    <div class="tx-title">Emergency Restock — Partial Rollback</div>
+                    <div class="tx-subtitle">Fuel committed · Ammo cancelled via SAVEPOINT</div>
+                </div>
+            </div>
+            <div class="tx-header-right">
+                <span class="tx-status pending" id="status-t3">PENDING</span>
+                <button class="btn-run green" id="btn-t3" onclick="runTx('t3', event)">
+                    <div class="tx-spinner" id="spin-t3"></div>
+                    ▶ Run Transaction
+                </button>
+                <span class="tx-arrow">▼</span>
+            </div>
+        </div>
+        <div class="tx-scenario">
+            <strong>Scenario:</strong> Resupply Pathankot AFB (base 4) in two parts:
+            <strong>Part A</strong> — 200,000 L Jet Fuel from Hindon (base 1) · <strong>Part B</strong> — 100 T Ammunition from Ambala (base 2).
+            A SAVEPOINT is created after Part A. A security alert cancels Part B.
+            <strong>ROLLBACK TO SAVEPOINT</strong> undoes only Part B; Part A is committed.<br>
+            <strong>ACID property:</strong> Fine-grained Atomicity via SAVEPOINT
+        </div>
+        <div class="tx-body" id="body-t3">
+            <div class="tx-empty">Click <strong>▶ Run Transaction</strong> to execute and see live DB changes.</div>
+        </div>
+    </div>
+
+    <!-- ── T8 — ROLLBACK ── -->
+    <div class="tx-card" id="card-t8">
+        <div class="tx-header" onclick="toggleCard('t8')">
+            <div class="tx-header-left">
+                <span class="tx-badge rollback-type">T8 · ROLLBACK</span>
+                <div>
+                    <div class="tx-title">Invalid Transfer — Explicit ROLLBACK</div>
+                    <div class="tx-subtitle">99,999 BrahMos from Hindon — insufficient stock triggers ROLLBACK</div>
+                </div>
+            </div>
+            <div class="tx-header-right">
+                <span class="tx-status pending" id="status-t8">PENDING</span>
+                <button class="btn-run red" id="btn-t8" onclick="runTx('t8', event)">
+                    <div class="tx-spinner" id="spin-t8"></div>
+                    ▶ Run (Trigger Rollback)
+                </button>
+                <span class="tx-arrow">▼</span>
+            </div>
+        </div>
+        <div class="tx-scenario">
+            <strong>Scenario:</strong> Attempt to transfer <strong>99,999 BrahMos</strong> missiles from
+            Hindon AFB (base 1, has only ~48) to Ambala AFB (base 2).
+            The first UPDATE (credit Ambala) succeeds. The second UPDATE (debit Hindon)
+            succeeds at SQL level but results in a <strong>negative quantity</strong>.
+            Application-level validation detects the violation and issues an explicit <strong>ROLLBACK</strong>
+            — undoing <em>all</em> changes including the successful credit to Ambala.<br>
+            <strong>ACID property:</strong> Atomicity — all or nothing
+        </div>
+        <div class="tx-body" id="body-t8">
+            <div class="tx-empty">Click <strong>▶ Run</strong> to see the ROLLBACK undo both operations.</div>
+        </div>
+    </div>
+
+    <!-- ══ PROBLEM → SOLUTION PAIR: T4 & T5 ══ -->
+    <div class="tx-pair">
+        <div class="tx-pair-label">
+            <span class="pair-icon">⚔</span>
+            PROBLEM → SOLUTION PAIR: Lost Update
+            <span style="margin-left:auto; font-size:10px; color:var(--dim);">Run T4 first, then T5 to see the fix</span>
+        </div>
+
+        <!-- ── T4 ── -->
+        <div class="tx-card" id="card-t4">
+            <div class="tx-header" onclick="toggleCard('t4')">
+                <div class="tx-header-left">
+                    <span class="tx-badge conflict">T4 · ANOMALY</span>
+                    <div>
+                        <div class="tx-title">❌ Lost Update — Without Locking</div>
+                        <div class="tx-subtitle">Two sessions overwrite each other on a stale read</div>
+                    </div>
+                </div>
+                <div class="tx-header-right">
+                    <span class="tx-status pending" id="status-t4">PENDING</span>
+                    <button class="btn-run orange" id="btn-t4" onclick="runTx('t4', event)">
+                        <div class="tx-spinner" id="spin-t4"></div>
+                        ▶ Run (Demonstrate Anomaly)
+                    </button>
+                    <span class="tx-arrow">▼</span>
+                </div>
+            </div>
+            <div class="tx-scenario">
+                <strong>Scenario:</strong> Pathankot AFB has <strong>50 BrahMos</strong> missiles.
+                <strong>Session A</strong> (Hindon HQ) needs 30. <strong>Session B</strong> (Ambala HQ) needs 25.
+                Neither session uses <code>SELECT FOR UPDATE</code>. Both read qty=50 concurrently.
+                Each computes its own new value. Last writer wins — A's committed deduction is silently lost.<br>
+                <strong>Anomaly:</strong> Lost Update
+            </div>
+            <div class="tx-body" id="body-t4">
+                <div class="tx-empty">Click <strong>▶ Run</strong> to simulate the race condition and see the corrupted result.</div>
+            </div>
+        </div>
+
+        <div class="tx-pair-arrow">── PROBLEM ▲ &nbsp;&nbsp;&nbsp; ▼ SOLUTION ──</div>
+
+        <!-- ── T5 ── -->
+        <div class="tx-card" id="card-t5">
+            <div class="tx-header" onclick="toggleCard('t5')">
+                <div class="tx-header-left">
+                    <span class="tx-badge fix">T5 · RESOLVED</span>
+                    <div>
+                        <div class="tx-title">✅ Lost Update — Fixed with SELECT FOR UPDATE</div>
+                        <div class="tx-subtitle">Exclusive row lock prevents stale reads</div>
+                    </div>
+                </div>
+                <div class="tx-header-right">
+                    <span class="tx-status pending" id="status-t5">PENDING</span>
+                    <button class="btn-run cyan" id="btn-t5" onclick="runTx('t5', event)">
+                        <div class="tx-spinner" id="spin-t5"></div>
+                        ▶ Run (Show Fix)
+                    </button>
+                    <span class="tx-arrow">▼</span>
+                </div>
+            </div>
+            <div class="tx-scenario">
+                <strong>Scenario:</strong> Same as T4 — Pathankot has 50 BrahMos, Session A needs 30, Session B needs 25.
+                This time both sessions use <strong>SELECT … FOR UPDATE</strong>.
+                Session A acquires an exclusive lock. Session B <strong>blocks</strong> until A commits, then
+                re-reads qty=20 and correctly detects insufficient stock → rolls back.<br>
+                <strong>Fix:</strong> SELECT FOR UPDATE
+            </div>
+            <div class="tx-body" id="body-t5">
+                <div class="tx-empty">Click <strong>▶ Run</strong> to see SELECT FOR UPDATE prevent the lost update.</div>
+            </div>
+        </div>
+    </div>
+    <!-- /tx-pair -->
+
+    <!-- ── T6 ── -->
+    <div class="tx-card" id="card-t6">
+        <div class="tx-header" onclick="toggleCard('t6')">
+            <div class="tx-header-left">
+                <span class="tx-badge conflict">T6 · DEADLOCK</span>
+                <div>
+                    <div class="tx-title">Deadlock — Circular Lock Wait</div>
+                    <div class="tx-subtitle">MySQL ERROR 1213 — victim auto-rolled back</div>
+                </div>
+            </div>
+            <div class="tx-header-right">
+                <span class="tx-status pending" id="status-t6">PENDING</span>
+                <button class="btn-run orange" id="btn-t6" onclick="runTx('t6', event)">
+                    <div class="tx-spinner" id="spin-t6"></div>
+                    ▶ Run (Trigger Deadlock)
+                </button>
+                <span class="tx-arrow">▼</span>
+            </div>
+        </div>
+        <div class="tx-scenario">
+            <strong>Scenario:</strong>
+            <strong>Session A</strong> transfers Jet Fuel FROM Ambala TO Pathankot — locks Ambala-Fuel first, then tries Pathankot-Fuel.<br>
+            <strong>Session B</strong> transfers Ammo FROM Pathankot TO Ambala — locks Pathankot-Ammo first, then tries Ambala-Ammo.<br>
+            Circular dependency → MySQL deadlock detector fires → victim auto-rolled back with <strong>ERROR 1213</strong>.
+        </div>
+        <div class="tx-body" id="body-t6">
+            <div class="tx-empty">Click <strong>▶ Run</strong> to trigger the deadlock and observe MySQL's auto-resolution.</div>
+        </div>
+    </div>
+
+    <!-- ── T7 ── -->
+    <div class="tx-card" id="card-t7">
+        <div class="tx-header" onclick="toggleCard('t7')">
+            <div class="tx-header-left">
+                <span class="tx-badge conflict">T7 · DIRTY READ</span>
+                <div>
+                    <div class="tx-title">Dirty Read — READ UNCOMMITTED Isolation</div>
+                    <div class="tx-subtitle">Session B reads Session A's uncommitted data</div>
+                </div>
+            </div>
+            <div class="tx-header-right">
+                <span class="tx-status pending" id="status-t7">PENDING</span>
+                <button class="btn-run orange" id="btn-t7" onclick="runTx('t7', event)">
+                    <div class="tx-spinner" id="spin-t7"></div>
+                    ▶ Run (Demonstrate Dirty Read)
+                </button>
+                <span class="tx-arrow">▼</span>
+            </div>
+        </div>
+        <div class="tx-scenario">
+            <strong>Scenario:</strong> <strong>Session A</strong> reduces Agni-V at Tezpur qty → 0 (NOT committed).
+            <strong>Session B</strong> (isolation = <code>READ UNCOMMITTED</code>) reads qty=0 — a <em>dirty value</em> —
+            inserts a <em>'Vulnerable'</em> readiness report, and commits it.
+            Session A then <strong>ROLLBACKs</strong>; qty is restored to 2.
+            Session B's committed report is now <strong>wrong</strong> — based on data that never existed.
+        </div>
+        <div class="tx-body" id="body-t7">
+            <div class="tx-empty">Click <strong>▶ Run</strong> to see the dirty read anomaly in action.</div>
+        </div>
+    </div>
+
+</div><!-- /tx-grid -->
+
+<!-- ── Live DB Snapshot ───────────────────────────────────── -->
+<div style="margin-top: 36px;">
+    <div class="section-title" style="margin-bottom:16px;">
+        ◉ Live DB Snapshot
+        <button class="btn btn-ghost btn-sm" style="margin-left:12px;" onclick="loadSnapshot()">↻ Refresh</button>
+    </div>
+    <div class="snap-grid" id="snap-grid">
+        <div class="tx-empty">Click Refresh to load current database state.</div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let execCount = 0;
+// Store before-state data per transaction for diff comparison
+const txBeforeData = {};
+
+// ── SQL Command Chains for each transaction ──────────────────────────
+const TX_SQL = {
+    t1: [
+        '-- T1: Atomic Fuel Transfer (Ambala → Halwara)',
+        'START TRANSACTION;',
+        '',
+        'UPDATE Resource_Inventory SET quantity = quantity - 400000',
+        '  WHERE base_id = 2 AND resource_id = 1;       -- Debit Ambala',
+        '',
+        'UPDATE Resource_Inventory SET quantity = quantity + 400000,',
+        "  status = 'Adequate'",
+        '  WHERE base_id = 3 AND resource_id = 1;       -- Credit Halwara',
+        '',
+        'INSERT INTO Logistics_Transfer',
+        '  (source_base_id, transfer_base_id, resource_id,',
+        "   quantity_transferred, start_date, status)",
+        "  VALUES (2, 3, 1, 400000, CURDATE(), 'Completed');",
+        '',
+        'COMMIT;',
+    ],
+    t2: [
+        '-- T2: Mission Deployment — consume Agni-V + log simulation',
+        'START TRANSACTION;',
+        '',
+        'UPDATE Missile_Inventory SET quantity = quantity - 1',
+        '  WHERE base_id = 12 AND missile_type_id = 10;  -- Agni-V at Tezpur',
+        '',
+        "UPDATE Personnel SET avail_status = 'In Mission'",
+        "  WHERE base_id = 12 AND role = 'Pilot' LIMIT 1;",
+        '',
+        'INSERT INTO Attack_Simulation',
+        '  (target_base_id, base_id, simulation_type,',
+        '   simulation_date, readiness_level, recommendation)',
+        "  VALUES (3, 12, 'Ballistic Strike', CURDATE(),",
+        "   'High', 'Agni-V deployed from Tezpur');",
+        '',
+        'COMMIT;',
+    ],
+    t3: [
+        '-- T3: Emergency Restock with SAVEPOINT',
+        'START TRANSACTION;',
+        '',
+        '-- Part A: Fuel transfer (Hindon → Pathankot)',
+        'UPDATE Resource_Inventory SET quantity = quantity - 200000',
+        '  WHERE base_id = 1 AND resource_id = 1;       -- Debit Hindon',
+        'UPDATE Resource_Inventory SET quantity = quantity + 200000',
+        '  WHERE base_id = 4 AND resource_id = 1;       -- Credit Pathankot',
+        '',
+        'SAVEPOINT before_ammo;                          -- ★ Savepoint here',
+        '',
+        '-- Part B: Ammo transfer (Ambala → Pathankot)',
+        'UPDATE Resource_Inventory SET quantity = quantity - 100',
+        '  WHERE base_id = 2 AND resource_id = 4;       -- Debit Ambala ammo',
+        'UPDATE Resource_Inventory SET quantity = quantity + 100',
+        '  WHERE base_id = 4 AND resource_id = 4;       -- Credit Pathankot ammo',
+        '',
+        '-- ⚠ Security alert cancels Part B!',
+        'ROLLBACK TO SAVEPOINT before_ammo;              -- ★ Undo ONLY Part B',
+        '',
+        'COMMIT;                                         -- Part A is kept',
+    ],
+    t8: [
+        '-- T8: Explicit ROLLBACK — insufficient stock',
+        'START TRANSACTION;',
+        '',
+        'UPDATE Missile_Inventory SET quantity = quantity + 99999',
+        '  WHERE base_id = 2 AND missile_type_id = 1;   -- Credit Ambala',
+        '',
+        'UPDATE Missile_Inventory SET quantity = quantity - 99999',
+        '  WHERE base_id = 1 AND missile_type_id = 1;   -- Debit Hindon',
+        '',
+        '-- Validation check:',
+        'SELECT quantity FROM Missile_Inventory',
+        '  WHERE base_id = 1 AND missile_type_id = 1;',
+        '-- Result: quantity = -99951 → NEGATIVE!',
+        '',
+        'ROLLBACK;                                       -- ★ Undo ALL changes',
+    ],
+    t4: [
+        '-- T4: Lost Update — NO locking (two concurrent sessions)',
+        '',
+        '-- [SESSION A]                              -- [SESSION B]',
+        'START TRANSACTION;                          START TRANSACTION;',
+        '',
+        'SELECT quantity                             SELECT quantity',
+        '  FROM Missile_Inventory                      FROM Missile_Inventory',
+        '  WHERE base_id=4                             WHERE base_id=4',
+        '  AND missile_type_id=1;                       AND missile_type_id=1;',
+        '-- reads qty = 50                           -- reads qty = 50 (STALE!)',
+        '',
+        'UPDATE Missile_Inventory',
+        '  SET quantity = 20                         -- (Session B waits...)',
+        '  WHERE base_id=4 AND missile_type_id=1;',
+        'COMMIT;                                     -- A commits qty = 20',
+        '',
+        '                                            UPDATE Missile_Inventory',
+        '                                              SET quantity = 25',
+        '                                              WHERE base_id=4',
+        '                                              AND missile_type_id=1;',
+        '                                            COMMIT;  -- OVERWRITES to 25!',
+    ],
+    t5: [
+        '-- T5: Lost Update FIXED — SELECT ... FOR UPDATE',
+        '',
+        '-- [SESSION A]                              -- [SESSION B]',
+        'START TRANSACTION;                          START TRANSACTION;',
+        '',
+        'SELECT quantity                             SELECT quantity',
+        '  FROM Missile_Inventory                      FROM Missile_Inventory',
+        '  WHERE base_id=4                             WHERE base_id=4',
+        '  AND missile_type_id=1                        AND missile_type_id=1',
+        '  FOR UPDATE;  ← LOCK                         FOR UPDATE;  ← BLOCKED!',
+        '-- reads qty = 50                           -- ⏸ waits for A\'s lock...',
+        '',
+        'UPDATE Missile_Inventory',
+        '  SET quantity = 20',
+        '  WHERE base_id=4 AND missile_type_id=1;',
+        'COMMIT;  -- releases lock                   -- B unblocks, re-reads qty=20',
+        '',
+        '                                            -- qty=20, need 25 → INSUFFICIENT',
+        '                                            ROLLBACK;  -- correctly aborts',
+    ],
+    t6: [
+        '-- T6: Deadlock — circular lock dependency',
+        '',
+        '-- [SESSION A]                              -- [SESSION B]',
+        'START TRANSACTION;                          START TRANSACTION;',
+        '',
+        'UPDATE Resource_Inventory                   UPDATE Resource_Inventory',
+        '  SET quantity = quantity - 100000            SET quantity = quantity - 50',
+        '  WHERE base_id=2 AND resource_id=1;          WHERE base_id=4 AND resource_id=4;',
+        '-- A locks Ambala fuel row                  -- B locks Pathankot ammo row',
+        '',
+        'UPDATE Resource_Inventory                   UPDATE Resource_Inventory',
+        '  SET quantity = quantity + 100000            SET quantity = quantity + 50',
+        '  WHERE base_id=4 AND resource_id=1;          WHERE base_id=2 AND resource_id=4;',
+        '-- A wants Pathankot fuel → BLOCKED         -- B wants Ambala ammo → BLOCKED',
+        '',
+        '-- ⚡ DEADLOCK detected by MySQL!',
+        '-- Victim auto-rolled back (ERROR 1213)',
+        '-- Winner commits successfully',
+    ],
+    t7: [
+        '-- T7: Dirty Read — READ UNCOMMITTED isolation',
+        '',
+        '-- [SESSION A]                              -- [SESSION B]',
+        'START TRANSACTION;                          SET SESSION TRANSACTION',
+        '                                              ISOLATION LEVEL READ UNCOMMITTED;',
+        '                                            START TRANSACTION;',
+        '',
+        'UPDATE Missile_Inventory                    ',
+        '  SET quantity = 0                          ',
+        '  WHERE base_id=12                          ',
+        '  AND missile_type_id=10;                   ',
+        '-- NOT committed!                           SELECT quantity',
+        '                                              FROM Missile_Inventory',
+        '                                              WHERE base_id=12',
+        '                                              AND missile_type_id=10;',
+        '                                            -- reads qty = 0 ← DIRTY VALUE!',
+        '',
+        '                                            INSERT INTO Readiness_Report ...',
+        '                                              -- logs \'Vulnerable\' based on qty=0',
+        '                                            COMMIT;  -- B commits wrong data',
+        '',
+        'ROLLBACK;  -- A undoes qty=0                -- qty restored to original',
+        '           -- but B\'s report is already committed with WRONG data!',
+    ],
+};
+
+// ── Render SQL chain ─────────────────────────────────────────────────
+function renderSQLChain(id) {
+    const lines = TX_SQL[id];
+    if (!lines) return '';
+    const rendered = lines.map(line => {
+        if (!line) return `<div class="sql-line" style="height:6px;"></div>`;
+        // Syntax highlight
+        let html = line
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/\b(START TRANSACTION|BEGIN|COMMIT|ROLLBACK|ROLLBACK TO SAVEPOINT|SAVEPOINT|SELECT|UPDATE|INSERT INTO|DELETE|FROM|WHERE|SET|AND|OR|VALUES|LIMIT|JOIN|ON|ORDER BY|DESC|ASC|INTO|SESSION|TRANSACTION|ISOLATION LEVEL|READ UNCOMMITTED|FOR UPDATE|NOT|NULL)\b/g, '<span class="kw">$1</span>')
+            .replace(/\b(CURDATE|NOW|COUNT|SUM|AVG)\b/g, '<span class="fn">$1</span>')
+            .replace(/(\b\d+\.?\d*\b)/g, '<span class="num">$1</span>')
+            .replace(/'([^']+)'/g, "<span class='str'>'$1'</span>")
+            .replace(/\b(Resource_Inventory|Missile_Inventory|Logistics_Transfer|Personnel|Attack_Simulation|Readiness_Report|Bases|Missile_Type|Enemy_Base)\b/g, '<span class="tbl">$1</span>')
+            .replace(/(--[^\[].*)$/g, '<span class="cmt">$1</span>')
+            .replace(/\[SESSION A\]/g, '<span class="sess-a">[SESSION A]</span>')
+            .replace(/\[SESSION B\]/g, '<span class="sess-b">[SESSION B]</span>');
+        return `<div class="sql-line">${html}</div>`;
+    }).join('');
+    return `<div>
+        <div class="sec-label">SQL Commands</div>
+        <div class="sql-chain">
+            <div class="sql-chain-title"><span style="font-size:14px;">⌘</span> Transaction SQL Chain — ${id.toUpperCase()}</div>
+            <div class="sql-chain-body">${rendered}</div>
+        </div>
+    </div>`;
+}
+
+// ── Toggle card open/closed ──────────────────────────────────────────
+function toggleCard(id) {
+    const card = document.getElementById('card-' + id);
+    card.classList.toggle('open');
+}
+
+// ── Render a mini table from an array of row objects ─────────────────
+function renderTable(tableData, beforeRows) {
+    if (!tableData || !tableData.rows || tableData.rows.length === 0) {
+        return `<div class="mini-tbl-wrap">
+            <div class="mini-tbl-title">${tableData.title}</div>
+            <div style="padding:12px 16px; color:var(--muted); font-size:12px;">(no rows)</div>
+        </div>`;
+    }
+    const keys = Object.keys(tableData.rows[0]);
+    const header = keys.map(k => `<th>${k}</th>`).join('');
+    const body   = tableData.rows.map((row, ri) => {
+        const cells = keys.map(k => {
+            let v = row[k];
+            if (v === null || v === undefined) v = '—';
+
+            // Diff logic: compare with before data if available
+            let cls = '';
+            if (beforeRows && beforeRows.length > 0) {
+                const beforeRow = beforeRows[ri];
+                if (beforeRow && beforeRow[k] !== undefined) {
+                    const bv = beforeRow[k];
+                    if (typeof v === 'number' && typeof bv === 'number') {
+                        if (v > bv) cls = 'diff-up';
+                        else if (v < bv) cls = 'diff-down';
+                        else cls = 'diff-same';
+                    } else if (v !== bv) {
+                        cls = 'diff-new';
+                    }
+                } else if (!beforeRow) {
+                    // New row not in before data
+                    cls = 'diff-new';
+                }
+            }
+
+            return `<td class="${cls}">${v}</td>`;
+        }).join('');
+        return `<tr>${cells}</tr>`;
+    }).join('');
+    return `<div class="mini-tbl-wrap">
+        <div class="mini-tbl-title">${tableData.title}</div>
+        <div style="overflow-x:auto;">
+            <table class="mini-tbl"><thead><tr>${header}</tr></thead><tbody>${body}</tbody></table>
+        </div>
+    </div>`;
+}
+
+// ── Render step log ───────────────────────────────────────────────────
+function renderSteps(steps) {
+    const lines = steps.map(s => {
+        let cls = '';
+        const sl = s.toLowerCase();
+        if (sl.includes('commit'))    cls = 'commit';
+        else if (sl.includes('rollback')) cls = 'rollback';
+        else if (sl.includes('savepoint')) cls = 'savepoint';
+        else if (sl.includes('blocked') || sl.includes('⏸')) cls = 'blocked';
+        else if (sl.includes('⚠') || sl.includes('alert') || sl.includes('⚡') || sl.includes('deadlock') || sl.includes('dirty') || sl.includes('overwrit') || sl.includes('violation') || sl.includes('constraint')) cls = 'warn';
+        return `<div class="step-line ${cls}"><div class="step-dot"></div><div class="step-text">${s}</div></div>`;
+    }).join('');
+    return `<div>
+        <div class="sec-label">Execution Steps</div>
+        <div class="steps-log">${lines}</div>
+    </div>`;
+}
+
+// ── Render effect box ─────────────────────────────────────────────────
+function renderEffect(effects, status) {
+    const cls = ['anomaly','deadlock','dirty_read','rolled_back'].includes(status) ? 'anomaly' : 'resolved';
+    const lines = effects.map(e => `<div class="effect-line">${e}</div>`).join('');
+    return `<div>
+        <div class="sec-label">Effect on DB</div>
+        <div class="effect-box ${cls}">${lines}</div>
+    </div>`;
+}
+
+// ── Status label map ──────────────────────────────────────────────────
+const STATUS_LABEL = {
+    committed:    'COMMITTED',
+    partial_commit: 'PARTIAL COMMIT',
+    anomaly:      'ANOMALY',
+    deadlock:     'DEADLOCK',
+    resolved:     'RESOLVED',
+    dirty_read:   'DIRTY READ',
+    rolled_back:  'ROLLED BACK'
+};
+
+// ── Run a transaction ─────────────────────────────────────────────────
+async function runTx(id, e) {
+    e.stopPropagation();
+    const btn  = document.getElementById('btn-' + id);
+    const spin = document.getElementById('spin-' + id);
+    const stat = document.getElementById('status-' + id);
+    const body = document.getElementById('body-' + id);
+    const card = document.getElementById('card-' + id);
+
+    btn.disabled = true;
+    spin.style.display = 'block';
+    stat.className = 'tx-status pending';
+    stat.textContent = 'RUNNING…';
+    card.classList.add('open');
+
+    try {
+        const resp = await fetch(`/api/transactions/${id}`, { method: 'POST' });
+        const data = await resp.json();
+
+        // Store before data for diff
+        txBeforeData[id] = data.before;
+
+        // Update status pill
+        const label = STATUS_LABEL[data.status] || data.status.toUpperCase();
+        stat.className = `tx-status ${data.status}`;
+        stat.textContent = label;
+
+        // Build before tables (plain, no diff)
+        const beforeCols = data.before.map(t => renderTable(t)).join('');
+
+        // Build after tables WITH diff highlighting
+        const afterCols = data.after.map((afterTbl, idx) => {
+            // Try to match with a before table by finding one with matching column structure
+            let matchedBefore = null;
+            if (data.before && data.before.length > 0) {
+                // First try exact index match
+                if (data.before[idx] && data.before[idx].rows && data.before[idx].rows.length > 0) {
+                    matchedBefore = data.before[idx].rows;
+                }
+            }
+            return renderTable(afterTbl, matchedBefore);
+        }).join('');
+
+        body.innerHTML = `
+            ${renderSQLChain(id)}
+            <div>
+                <div class="sec-label">Before State</div>
+                <div class="snap-grid" style="gap:12px;">${beforeCols}</div>
+            </div>
+            ${renderSteps(data.steps)}
+            <div>
+                <div class="sec-label">After State</div>
+                <div class="snap-grid" style="gap:12px;">${afterCols}</div>
+            </div>
+            ${renderEffect(data.effect, data.status)}
+        `;
+
+        execCount++;
+        document.getElementById('exec-count').textContent = execCount;
+        loadSnapshot();
+
+    } catch (err) {
+        stat.className = 'tx-status anomaly';
+        stat.textContent = 'ERROR';
+        body.innerHTML = `<div class="tx-empty" style="color:var(--red);">Request failed: ${err.message}</div>`;
+    } finally {
+        btn.disabled = false;
+        spin.style.display = 'none';
+    }
+}
+
+// ── Reset Database ────────────────────────────────────────────────────
+async function resetDB() {
+    const btn = document.getElementById('btn-reset');
+    if (!confirm('Reset all transaction-affected tables to original seed values?')) return;
+
+    btn.disabled = true;
+    btn.textContent = '⏳ Resetting…';
+    try {
+        const resp = await fetch('/api/transactions/reset', { method: 'POST' });
+        const data = await resp.json();
+        if (data.status === 'ok') {
+            // Reset all status pills
+            for (let i = 1; i <= 8; i++) {
+                const stat = document.getElementById('status-t' + i);
+                if (stat) {
+                    stat.className = 'tx-status pending';
+                    stat.textContent = 'PENDING';
+                }
+            }
+            execCount = 0;
+            document.getElementById('exec-count').textContent = '0';
+            // Show success via a subtle flash
+            btn.style.borderColor = 'rgba(0,255,170,0.6)';
+            btn.style.color = 'var(--green)';
+            btn.textContent = '✓ Reset Done';
+            setTimeout(() => {
+                btn.style.borderColor = '';
+                btn.style.color = '';
+                btn.textContent = '↻ Reset DB';
+            }, 2000);
+            loadSnapshot();
+        } else {
+            alert('Reset failed: ' + data.message);
+        }
+    } catch (err) {
+        alert('Reset failed: ' + err.message);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+// ── Live snapshot ─────────────────────────────────────────────────────
+async function loadSnapshot() {
+    const grid = document.getElementById('snap-grid');
+    grid.innerHTML = '<div class="tx-empty" style="color:var(--muted);">Loading…</div>';
+    try {
+        const resp = await fetch('/api/transactions/snapshot');
+        const data = await resp.json();
+
+        const tables = [
+            { title: 'Fuel (bases 1–4)',            rows: data.fuel },
+            { title: 'Ammunition (bases 1–4)',       rows: data.ammo },
+            { title: 'Key Missile Inventory',        rows: data.missiles },
+            { title: 'Recent Logistics Transfers',   rows: data.transfers },
+            { title: 'Recent Attack Simulations',    rows: data.simulations },
+        ];
+        grid.innerHTML = tables.map(t => renderTable(t)).join('');
+    } catch (e) {
+        grid.innerHTML = `<div class="tx-empty" style="color:var(--red);">Failed to load snapshot.</div>`;
+    }
+}
+
+// Auto-open first card on load
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('card-t1').classList.add('open');
+});
+</script>
+{% endblock %}

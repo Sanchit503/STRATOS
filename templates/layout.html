@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}STRATOS{% endblock %} — Command Center</title>
+    <meta name="description" content="STRATOS Strategic Operations — Military Command Center">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/static/nav.css">
+    {% block head %}{% endblock %}
+</head>
+
+<body>
+
+    <!-- ══ SIDEBAR NAV ══ -->
+    <nav class="sidenav" id="sidenav">
+        <div class="sn-brand">
+            <div class="sn-logo">S</div>
+            <div class="sn-brand-text">
+                <span class="sn-title">STRATOS</span>
+                <span class="sn-sub">Command Center</span>
+            </div>
+        </div>
+
+        <div class="sn-links">
+            <a href="/dashboard" class="sn-link {% if active_page == 'dashboard' %}active{% endif %}"
+                id="nav-dashboard">
+                <span class="sn-icon">▦</span>
+                <span class="sn-label">Dashboard</span>
+            </a>
+            <a href="/bases" class="sn-link {% if active_page == 'bases' %}active{% endif %}" id="nav-bases">
+                <span class="sn-icon">⬡</span>
+                <span class="sn-label">Bases</span>
+            </a>
+            <a href="/missiles" class="sn-link {% if active_page == 'missiles' %}active{% endif %}" id="nav-missiles">
+                <span class="sn-icon">◈</span>
+                <span class="sn-label">Missiles</span>
+            </a>
+            <a href="/vehicles" class="sn-link {% if active_page == 'vehicles' %}active{% endif %}" id="nav-vehicles">
+                <span class="sn-icon">◉</span>
+                <span class="sn-label">Vehicles</span>
+            </a>
+            <a href="/operations" class="sn-link {% if active_page == 'operations' %}active{% endif %}" id="nav-operations">
+                <span class="sn-icon">⚙</span>
+                <span class="sn-label">Operations</span>
+            </a>
+            <a href="/enemy" class="sn-link {% if active_page == 'enemy' %}active{% endif %}" id="nav-enemy">
+                <span class="sn-icon">◆</span>
+                <span class="sn-label">Enemy Intel</span>
+            </a>
+
+
+            <a href="/transactions" class="sn-link {% if active_page == 'transactions' %}active{% endif %}" id="nav-transactions">
+                <span class="sn-icon">⚡</span>
+                <span class="sn-label">Transactions</span>
+            </a>
+
+            <div class="sn-div"></div>
+
+            <a href="/" class="sn-link {% if active_page == 'map' %}active{% endif %}" id="nav-map">
+                <span class="sn-icon">⊕</span>
+                <span class="sn-label">Strategic Map</span>
+            </a>
+        </div>
+
+        <div class="sn-footer">
+            <div class="sn-live">
+                <div class="sn-live-dot"></div>
+                LIVE OPERATIONS
+            </div>
+        </div>
+    </nav>
+
+    <!-- ══ MAIN CONTENT ══ -->
+    <main class="page-content" id="page-content">
+        <header class="page-header">
+            <div class="ph-left">
+                <button class="sn-toggle" onclick="toggleNav()">☰</button>
+                <h1 class="ph-title">{% block page_title %}Dashboard{% endblock %}</h1>
+            </div>
+            <div class="ph-right">
+                {% block header_actions %}{% endblock %}
+            </div>
+        </header>
+
+        <div class="page-body">
+            {% block content %}{% endblock %}
+        </div>
+    </main>
+
+    <script src="/static/common.js"></script>
+    {% block scripts %}{% endblock %}
+
+</body>
+
+</html>

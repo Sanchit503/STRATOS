@@ -1,0 +1,637 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>STRATOS — Strategic Map Command</title>
+    <meta name="description" content="STRATOS Strategic Operations Map — Real-time military base intelligence">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/static/style.css" />
+    <style>
+        /* ── Mission Mode ── */
+        #map.mission-mode {
+            box-shadow: inset 0 0 0 3px rgba(255, 51, 102, 0.5), inset 0 0 40px rgba(255, 51, 102, 0.08);
+        }
+
+        .mission-bar {
+            position: fixed;
+            top: 56px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(10, 14, 26, 0.95);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(255, 51, 102, 0.4);
+            border-radius: 99px;
+            padding: 10px 24px;
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            z-index: 2000;
+            display: none;
+            animation: slideDown 0.3s ease;
+            box-shadow: 0 4px 30px rgba(255, 51, 102, 0.2);
+        }
+
+        @keyframes slideDown {
+            from {
+                opacity: 0;
+                transform: translateX(-50%) translateY(-10px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateX(-50%) translateY(0);
+            }
+        }
+
+        .mission-bar.active {
+            display: flex;
+        }
+
+        .mb-step {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 1.5px;
+            color: #ff3366;
+        }
+
+        .mb-inst {
+            font-size: 12px;
+            color: #94a3b8;
+        }
+
+        .mb-sel {
+            font-size: 12px;
+            font-weight: 700;
+            color: #00ffaa;
+        }
+
+        .mb-cancel {
+            background: none;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #64748b;
+            border-radius: 99px;
+            padding: 4px 12px;
+            font-size: 11px;
+            cursor: pointer;
+        }
+
+        .mb-cancel:hover {
+            border-color: #ff3366;
+            color: #ff3366;
+        }
+
+        /* ── Strike Line Pulse ── */
+        .strike-line {
+            stroke-dasharray: 12 6;
+            animation: dash 1.5s linear infinite;
+        }
+
+        @keyframes dash {
+            to {
+                stroke-dashoffset: -36;
+            }
+        }
+
+        /* ── Mission Side Panel ── */
+        .mission-panel {
+            position: fixed;
+            top: 56px;
+            right: 0;
+            bottom: 0;
+            width: 380px;
+            background: rgba(5, 7, 14, 0.96);
+            backdrop-filter: blur(24px);
+            border-left: 1px solid rgba(255, 51, 102, 0.3);
+            z-index: 3000;
+            transform: translateX(100%);
+            transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .mission-panel.open {
+            transform: translateX(0);
+        }
+
+        .md-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 28px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+            position: sticky;
+            top: 0;
+            background: rgba(5, 7, 14, 0.98);
+            z-index: 1;
+        }
+
+        .md-route {
+            font-size: 16px;
+            font-weight: 800;
+            letter-spacing: 1px;
+        }
+
+        .md-meta {
+            display: flex;
+            gap: 20px;
+            align-items: center;
+        }
+
+        .md-stat {
+            text-align: center;
+        }
+
+        .md-val {
+            font-size: 18px;
+            font-weight: 800;
+            font-family: monospace;
+            color: #22d3ee;
+        }
+
+        .md-lbl {
+            font-size: 9px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .md-close {
+            background: none;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #64748b;
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 14px;
+        }
+
+        .md-close:hover {
+            border-color: #ff3366;
+            color: #ff3366;
+        }
+
+        .md-body {
+            padding: 16px 28px 24px;
+        }
+
+        .md-checks {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .mc {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.07);
+            border-radius: 8px;
+            padding: 12px 14px;
+            border-left: 3px solid;
+        }
+
+        .mc.pass {
+            border-left-color: #00ffaa;
+        }
+
+        .mc.warning {
+            border-left-color: #fbbf24;
+        }
+
+        .mc.fail {
+            border-left-color: #ff3366;
+        }
+
+        .mc-top {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+
+        .mc-num {
+            font-size: 9px;
+            font-family: monospace;
+            color: #475569;
+            font-weight: 700;
+        }
+
+        .mc-name {
+            flex: 1;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .mc-badge {
+            font-size: 9px;
+            font-weight: 800;
+            letter-spacing: 1px;
+            padding: 2px 8px;
+            border-radius: 99px;
+        }
+
+        .mc-badge.pass {
+            background: rgba(0, 255, 170, 0.15);
+            color: #00ffaa;
+        }
+
+        .mc-badge.warning {
+            background: rgba(251, 191, 36, 0.15);
+            color: #fbbf24;
+        }
+
+        .mc-badge.fail {
+            background: rgba(255, 51, 102, 0.15);
+            color: #ff3366;
+        }
+
+        .mc-result {
+            font-size: 11px;
+            color: #64748b;
+        }
+
+        .md-verdict {
+            border-radius: 10px;
+            padding: 20px 24px;
+            border: 1px solid;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 14px;
+            margin-bottom: 14px;
+        }
+
+        .md-verdict.green {
+            background: rgba(0, 255, 170, 0.06);
+            border-color: rgba(0, 255, 170, 0.2);
+        }
+
+        .md-verdict.yellow {
+            background: rgba(251, 191, 36, 0.06);
+            border-color: rgba(251, 191, 36, 0.2);
+        }
+
+        .md-verdict.red {
+            background: rgba(255, 51, 102, 0.06);
+            border-color: rgba(255, 51, 102, 0.2);
+        }
+
+        .mdv-decision {
+            font-size: 18px;
+            font-weight: 900;
+            letter-spacing: 2px;
+        }
+
+        .md-verdict.green .mdv-decision {
+            color: #00ffaa;
+        }
+
+        .md-verdict.yellow .mdv-decision {
+            color: #fbbf24;
+        }
+
+        .md-verdict.red .mdv-decision {
+            color: #ff3366;
+        }
+
+        .mdv-pkg {
+            font-size: 11px;
+            color: #94a3b8;
+        }
+
+        .mdv-pkg span {
+            display: block;
+            color: #cbd5e1;
+            padding: 2px 0;
+        }
+
+        .mdv-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .md-btn {
+            padding: 8px 18px;
+            border-radius: 6px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            border: none;
+        }
+
+        .md-btn-primary {
+            background: #ff3366;
+            color: #fff;
+        }
+
+        .md-btn-primary:hover {
+            background: #e02050;
+        }
+
+        .md-btn-ghost {
+            background: transparent;
+            color: #94a3b8;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .md-btn-ghost:hover {
+            border-color: #94a3b8;
+            color: #fff;
+        }
+
+        /* Plan Strike button in top bar */
+        .plan-strike-btn {
+            background: rgba(255, 51, 102, 0.12);
+            color: #ff3366;
+            border: 1px solid rgba(255, 51, 102, 0.3);
+            border-radius: 6px;
+            padding: 6px 14px;
+            font-size: 12px;
+            font-weight: 700;
+            cursor: pointer;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+        }
+
+        .plan-strike-btn:hover,
+        .plan-strike-btn.active {
+            background: rgba(255, 51, 102, 0.25);
+            border-color: rgba(255, 51, 102, 0.6);
+            box-shadow: 0 0 12px rgba(255, 51, 102, 0.3);
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- ══ TOP BAR ══ -->
+    <div class="topbar">
+        <div class="topbar-brand">
+            <div class="topbar-logo">S</div>
+            <h1>STRATOS — Strategic Map Command</h1>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+            <a href="/dashboard" class="map-nav-link">Dashboard</a>
+            <a href="/bases" class="map-nav-link">Bases</a>
+            <a href="/missiles" class="map-nav-link">Missiles</a>
+            <a href="/vehicles" class="map-nav-link">Vehicles</a>
+            <a href="/enemy" class="map-nav-link">Enemy Intel</a>
+            <button class="plan-strike-btn" id="plan-strike-btn" onclick="toggleMissionMode()">+ Plan Strike</button>
+        </div>
+        <div class="live-pill">
+            <div class="live-dot"></div>LIVE
+        </div>
+    </div>
+
+    <!-- ══ MAP ══ -->
+    <div id="map"></div>
+
+    <!-- ══ LAYER PANEL ══ -->
+    <div class="layer-panel" id="lp">
+        <div class="lp-head" onclick="toggleLP()">
+            <span class="lp-title">🗺 Map Layers</span>
+            <span class="lp-chevron" id="lp-chev">▾</span>
+        </div>
+        <div class="lp-body" id="lp-body">
+
+            <!-- Friendly -->
+            <div class="lp-section">Friendly Forces</div>
+
+            <label class="lrow" for="cb-af">
+                <div class="lrow-left">
+                    <div class="licon licon-af">✈</div>
+                    <span class="lrow-name">Air Force Bases</span>
+                </div>
+                <div class="lrow-right">
+                    <span class="lcount" id="cnt-af">—</span>
+                    <div class="toggle-wrap">
+                        <input type="checkbox" id="cb-af" checked onchange="toggleLayer('af')">
+                        <span class="tslide"></span>
+                    </div>
+                </div>
+            </label>
+
+            <label class="lrow" for="cb-naval">
+                <div class="lrow-left">
+                    <div class="licon licon-naval">⚓</div>
+                    <span class="lrow-name">Naval Bases</span>
+                </div>
+                <div class="lrow-right">
+                    <span class="lcount" id="cnt-naval">—</span>
+                    <div class="toggle-wrap">
+                        <input type="checkbox" id="cb-naval" checked onchange="toggleLayer('naval')">
+                        <span class="tslide"></span>
+                    </div>
+                </div>
+            </label>
+
+            <div class="lp-div"></div>
+
+            <!-- Enemy -->
+            <div class="lp-section">Enemy Forces</div>
+
+            <label class="lrow" for="cb-ecrit">
+                <div class="lrow-left">
+                    <div class="licon licon-ecrit">◆</div>
+                    <span class="lrow-name">Critical Threat</span>
+                </div>
+                <div class="lrow-right">
+                    <span class="lcount" id="cnt-ecrit">—</span>
+                    <div class="toggle-wrap">
+                        <input type="checkbox" id="cb-ecrit" checked onchange="toggleLayer('ecrit')">
+                        <span class="tslide"></span>
+                    </div>
+                </div>
+            </label>
+
+            <label class="lrow" for="cb-ehigh">
+                <div class="lrow-left">
+                    <div class="licon licon-ehigh">◆</div>
+                    <span class="lrow-name">High Threat</span>
+                </div>
+                <div class="lrow-right">
+                    <span class="lcount" id="cnt-ehigh">—</span>
+                    <div class="toggle-wrap">
+                        <input type="checkbox" id="cb-ehigh" checked onchange="toggleLayer('ehigh')">
+                        <span class="tslide"></span>
+                    </div>
+                </div>
+            </label>
+
+            <label class="lrow" for="cb-emed">
+                <div class="lrow-left">
+                    <div class="licon licon-emed">◆</div>
+                    <span class="lrow-name">Medium Threat</span>
+                </div>
+                <div class="lrow-right">
+                    <span class="lcount" id="cnt-emed">—</span>
+                    <div class="toggle-wrap">
+                        <input type="checkbox" id="cb-emed" checked onchange="toggleLayer('emed')">
+                        <span class="tslide"></span>
+                    </div>
+                </div>
+            </label>
+
+            <label class="lrow" for="cb-elow">
+                <div class="lrow-left">
+                    <div class="licon licon-elow">◆</div>
+                    <span class="lrow-name">Low Threat</span>
+                </div>
+                <div class="lrow-right">
+                    <span class="lcount" id="cnt-elow">—</span>
+                    <div class="toggle-wrap">
+                        <input type="checkbox" id="cb-elow" checked onchange="toggleLayer('elow')">
+                        <span class="tslide"></span>
+                    </div>
+                </div>
+            </label>
+
+            <div class="lp-div"></div>
+
+            <!-- Overlays -->
+            <div class="lp-section">Overlays</div>
+
+            <label class="lrow" for="cb-ranges">
+                <div class="lrow-left">
+                    <div class="licon licon-range">◎</div>
+                    <span class="lrow-name">Missile Ranges</span>
+                </div>
+                <div class="lrow-right">
+                    <div class="toggle-wrap">
+                        <input type="checkbox" id="cb-ranges" checked onchange="toggleLayer('ranges')">
+                        <span class="tslide"></span>
+                    </div>
+                </div>
+            </label>
+
+            <label class="lrow" for="cb-lines">
+                <div class="lrow-left">
+                    <div class="licon licon-lines">—</div>
+                    <span class="lrow-name">Strike Lines</span>
+                </div>
+                <div class="lrow-right">
+                    <div class="toggle-wrap">
+                        <input type="checkbox" id="cb-lines" checked onchange="toggleLayer('lines')">
+                        <span class="tslide"></span>
+                    </div>
+                </div>
+            </label>
+
+            <div class="lp-div"></div>
+
+            <div class="lp-summary">
+                <div class="lp-srow">
+                    <span>Friendly Bases</span>
+                    <span class="lp-sval" id="tot-f">—</span>
+                </div>
+                <div class="lp-srow">
+                    <span>Enemy Bases</span>
+                    <span class="lp-sval red" id="tot-e">—</span>
+                </div>
+            </div>
+
+        </div><!-- /lp-body -->
+    </div><!-- /layer-panel -->
+
+    <!-- ══ SIDEBAR ══ -->
+    <div class="sidebar" id="sb">
+        <div class="sb-head">
+            <div class="sb-head-row">
+                <span class="sb-label" id="sb-label">BASE INTEL</span>
+                <button class="sb-close" onclick="closeSB()">✕</button>
+            </div>
+            <div class="sb-title" id="sb-title">—</div>
+            <div class="sb-sub" id="sb-sub"></div>
+        </div>
+        <div class="sb-body" id="sb-body">
+            <div class="loader">
+                <div class="spinner"></div>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- ══ ZOOM CONTROLS ══ -->
+    <div id="zoom-controls"
+        style="position:fixed;bottom:24px;right:20px;z-index:1500;display:flex;flex-direction:column;gap:6px;">
+        <button onclick="map.zoomIn()" style="width:36px;height:36px;background:rgba(13,17,30,0.9);backdrop-filter:blur(12px);
+                   border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;
+                   font-size:20px;line-height:1;cursor:pointer;display:flex;align-items:center;
+                   justify-content:center;transition:all 0.2s;font-weight:300;"
+            onmouseover="this.style.borderColor='#22d3ee';this.style.color='#22d3ee';"
+            onmouseout="this.style.borderColor='rgba(255,255,255,0.12)';this.style.color='#e2e8f0';"
+            title="Zoom In">+</button>
+        <button onclick="map.zoomOut()" style="width:36px;height:36px;background:rgba(13,17,30,0.9);backdrop-filter:blur(12px);
+                   border:1px solid rgba(255,255,255,0.12);border-radius:8px;color:#e2e8f0;
+                   font-size:20px;line-height:1;cursor:pointer;display:flex;align-items:center;
+                   justify-content:center;transition:all 0.2s;font-weight:300;"
+            onmouseover="this.style.borderColor='#22d3ee';this.style.color='#22d3ee';"
+            onmouseout="this.style.borderColor='rgba(255,255,255,0.12)';this.style.color='#e2e8f0';"
+            title="Zoom Out">−</button>
+    </div>
+
+    <!-- ══ MISSION MODE INSTRUCTION BAR ══ -->
+    <div class="mission-bar" id="mission-bar">
+        <span class="mb-step" id="mb-step">STEP 1</span>
+        <span class="mb-inst" id="mb-inst">Click a <strong style="color:#22d3ee">friendly origin</strong> or <strong style="color:#ff3366">enemy target</strong></span>
+        <span class="mb-sel" id="mb-sel" style="display:none;"></span>
+        <button class="mb-cancel" onclick="toggleMissionMode()">✕ Cancel</button>
+    </div>
+
+    <!-- ══ MISSION SIDE PANEL ══ -->
+    <div class="mission-panel" id="mission-drawer">
+        <!-- Header -->
+        <div class="md-header">
+            <div style="flex:1;min-width:0;">
+                <div class="md-route" id="md-route" style="font-size:13px;">— → —</div>
+                <div style="font-size:10px;color:#64748b;margin-top:2px;" id="md-date"></div>
+            </div>
+            <button class="md-close" onclick="closeDrawer()">✕</button>
+        </div>
+        <!-- Stats row -->
+        <div class="md-meta" style="padding:12px 18px;border-bottom:1px solid rgba(255,255,255,0.05);gap:0;">
+            <div class="md-stat" style="flex:1;">
+                <div class="md-val" id="md-dist">—</div>
+                <div class="md-lbl">Distance km</div>
+            </div>
+            <div class="md-stat" style="flex:1;">
+                <div class="md-val" id="md-threat" style="color:#ff3366">—</div>
+                <div class="md-lbl">Threat</div>
+            </div>
+            <div class="md-stat" style="flex:1;">
+                <div class="md-val" id="md-pass" style="color:#00ffaa">—</div>
+                <div class="md-lbl">Checks</div>
+            </div>
+        </div>
+        <!-- Scrollable body -->
+        <div class="md-body" style="flex:1;overflow-y:auto;padding:14px 16px 20px;">
+            <!-- Check cards stacked vertically -->
+            <div id="md-checks" style="display:flex;flex-direction:column;gap:7px;margin-bottom:14px;"></div>
+            <!-- Verdict -->
+            <div class="md-verdict" id="md-verdict" style="flex-direction:column;gap:10px;">
+                <div class="mdv-decision" id="mdv-decision">—</div>
+                <div style="font-size:10px;color:#64748b;" id="mdv-meta">—</div>
+                <div class="mdv-pkg">
+                    <div
+                        style="font-size:9px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#475569;margin-bottom:5px;">
+                        Strike Package</div>
+                    <div id="mdv-pkg-list"></div>
+                </div>
+                <div class="mdv-actions" style="margin-top:4px;">
+                    <button class="md-btn md-btn-ghost" onclick="closeDrawer()">Close</button>
+                    <button class="md-btn md-btn-primary" id="md-save-btn" onclick="saveMissionFromDrawer()">Save
+                        Simulation</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/static/map.js"></script>
+</body>
+
+</html>

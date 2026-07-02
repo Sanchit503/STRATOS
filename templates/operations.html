@@ -1,0 +1,691 @@
+{% extends "layout.html" %}
+{% block title %}Operations{% endblock %}
+{% block page_title %}⚙ Operations Center{% endblock %}
+
+{% block head %}
+<style>
+/* ── Tab bar ─────────────────────────────────────────────── */
+.ops-tabs {
+    display: flex;
+    gap: 4px;
+    margin-bottom: 24px;
+    border-bottom: 1px solid var(--border-dim);
+    padding-bottom: 0;
+}
+.ops-tab {
+    padding: 12px 24px;
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: var(--muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: var(--t);
+    background: none;
+    border-top: none; border-left: none; border-right: none;
+    font-family: 'Outfit', 'Inter', sans-serif;
+}
+.ops-tab:hover { color: var(--text); }
+.ops-tab.active {
+    color: var(--cyan);
+    border-bottom-color: var(--cyan);
+}
+
+/* ── Tab panes ───────────────────────────────────────────── */
+.ops-pane { display: none; }
+.ops-pane.active { display: block; }
+
+/* ── Toolbar ─────────────────────────────────────────────── */
+.ops-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+}
+.ops-filters {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+/* ── Transfer cards ──────────────────────────────────────── */
+.transfer-card {
+    background: var(--bg-panel);
+    border: 1px solid var(--border-dim);
+    border-radius: var(--rsm);
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    transition: var(--t);
+    flex-wrap: wrap;
+}
+.transfer-card:hover { border-color: rgba(0,240,255,0.15); }
+.tc-route {
+    flex: 1;
+    min-width: 200px;
+}
+.tc-route-label {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+}
+.tc-route-sub {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 3px;
+}
+.tc-arrow {
+    color: var(--cyan);
+    font-weight: 700;
+    font-size: 16px;
+    flex-shrink: 0;
+}
+.tc-qty {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--cyan);
+    min-width: 120px;
+    text-align: right;
+}
+.tc-actions {
+    display: flex;
+    gap: 6px;
+    flex-shrink: 0;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+
+<!-- ── Tab bar ──────────────────────────────────────────────── -->
+<div class="ops-tabs">
+    <button class="ops-tab active" onclick="switchTab('personnel', this)" id="tab-personnel">
+        👤 Personnel
+    </button>
+    <button class="ops-tab" onclick="switchTab('resources', this)" id="tab-resources">
+        📦 Resources
+    </button>
+    <button class="ops-tab" onclick="switchTab('transfers', this)" id="tab-transfers">
+        🚚 Transfers
+    </button>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!--  TAB 1: PERSONNEL                                        -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="ops-pane active" id="pane-personnel">
+    <div class="ops-toolbar">
+        <div class="ops-filters">
+            <select class="select" id="p-base-filter" onchange="loadPersonnel()" style="min-width:220px;">
+                <option value="">All Bases</option>
+            </select>
+            <input class="input" id="p-search" placeholder="Search by name..." oninput="filterPersonnel()" style="width:180px;">
+            <span id="p-count" style="font-size:11px;color:var(--muted);"></span>
+        </div>
+        <button class="btn btn-primary" onclick="openPersonnelModal()">+ Add Personnel</button>
+    </div>
+    <div class="tbl-wrap">
+        <div style="overflow-x:auto;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Name</th>
+                        <th>Role</th>
+                        <th>Base</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="personnel-body"></tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!--  TAB 2: RESOURCES                                         -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="ops-pane" id="pane-resources">
+    <div class="ops-toolbar">
+        <div class="ops-filters">
+            <select class="select" id="r-base-filter" onchange="loadResources()" style="min-width:220px;">
+                <option value="">All Bases</option>
+            </select>
+            <span id="r-count" style="font-size:11px;color:var(--muted);"></span>
+        </div>
+        <button class="btn btn-primary" onclick="openResourceModal()">+ Add Resource to Base</button>
+    </div>
+    <div class="tbl-wrap">
+        <div style="overflow-x:auto;">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Base</th>
+                        <th>Resource Type</th>
+                        <th>Quantity</th>
+                        <th>Unit</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="resources-body"></tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- T3 Transaction Demo -->
+    <div style="margin-top:28px;padding-top:20px;border-top:1px solid var(--border-dim);">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div>
+                <div style="font-size:14px;font-weight:700;color:var(--text);">⚡ T3 — Emergency Restock (SAVEPOINT)</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:3px;">Transfer fuel Hindon→Pathankot, cancel ammo via SAVEPOINT — partial rollback demo</div>
+            </div>
+            <button class="btn btn-primary" onclick="runFeatureTx('t3','ops-t3-result')">▶ Run T3</button>
+        </div>
+        <div id="ops-t3-result" style="display:none;background:var(--bg-panel);border:1px solid var(--glass-border);border-radius:12px;padding:20px;"></div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!--  TAB 3: TRANSFERS                                         -->
+<!-- ══════════════════════════════════════════════════════════ -->
+<div class="ops-pane" id="pane-transfers">
+    <div class="ops-toolbar">
+        <div class="ops-filters">
+            <select class="select" id="tf-status-filter" onchange="filterTransfers()" style="min-width:160px;">
+                <option value="">All Statuses</option>
+                <option value="Pending">Pending</option>
+                <option value="In Transit">In Transit</option>
+                <option value="Completed">Completed</option>
+                <option value="Cancelled">Cancelled</option>
+            </select>
+            <span id="tf-count" style="font-size:11px;color:var(--muted);"></span>
+        </div>
+        <button class="btn btn-primary" onclick="openTransferModal()">+ New Transfer</button>
+    </div>
+    <div id="transfers-list" style="display:flex;flex-direction:column;gap:12px;"></div>
+
+    <!-- T1 Transaction Demo -->
+    <div style="margin-top:28px;padding-top:20px;border-top:1px solid var(--border-dim);">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+            <div>
+                <div style="font-size:14px;font-weight:700;color:var(--text);">⚡ T1 — Atomic Fuel Transfer</div>
+                <div style="font-size:12px;color:var(--muted);margin-top:3px;">400K litres Ambala→Halwara — atomic debit/credit + transfer log in single transaction</div>
+            </div>
+            <button class="btn btn-primary" onclick="runFeatureTx('t1','ops-t1-result'); setTimeout(loadTransfers, 1500);">▶ Run T1</button>
+        </div>
+        <div id="ops-t1-result" style="display:none;background:var(--bg-panel);border:1px solid var(--glass-border);border-radius:12px;padding:20px;"></div>
+    </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<!--  MODALS                                                   -->
+<!-- ══════════════════════════════════════════════════════════ -->
+
+<!-- Personnel Modal -->
+<div class="modal-overlay" id="personnel-modal">
+    <div class="modal">
+        <div class="modal-title">
+            <span id="pm-title">Add Personnel</span>
+            <button class="modal-close" onclick="closeModal('personnel-modal')">✕</button>
+        </div>
+        <form onsubmit="savePersonnel(event)">
+            <input type="hidden" id="pm-id">
+            <div class="form-group">
+                <label class="form-label">Name</label>
+                <input class="form-input" id="pm-name" required placeholder="e.g., Wing Commander Arjun Mehta">
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Role</label>
+                    <select class="form-input" id="pm-role">
+                        <option value="Pilot">Pilot</option>
+                        <option value="Engineer">Engineer</option>
+                        <option value="Support">Support</option>
+                        <option value="Captain">Captain</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Status</label>
+                    <select class="form-input" id="pm-status">
+                        <option value="On Duty">On Duty</option>
+                        <option value="Off Duty">Off Duty</option>
+                        <option value="On Leave">On Leave</option>
+                        <option value="In Mission">In Mission</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Assigned Base</label>
+                <select class="form-input" id="pm-base" required></select>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;">
+                <button type="button" class="btn btn-ghost" onclick="closeModal('personnel-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Resource Inventory Modal -->
+<div class="modal-overlay" id="resource-modal">
+    <div class="modal">
+        <div class="modal-title">
+            <span id="rm-title">Add Resource to Base</span>
+            <button class="modal-close" onclick="closeModal('resource-modal')">✕</button>
+        </div>
+        <form onsubmit="saveResource(event)">
+            <input type="hidden" id="rm-inv-id">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Base</label>
+                    <select class="form-input" id="rm-base" required></select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Resource Type</label>
+                    <select class="form-input" id="rm-resource" required></select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Quantity</label>
+                    <input class="form-input" id="rm-qty" type="number" step="any" min="0" required>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Status</label>
+                    <select class="form-input" id="rm-status">
+                        <option value="Adequate">Adequate</option>
+                        <option value="Low">Low</option>
+                        <option value="Critical">Critical</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;">
+                <button type="button" class="btn btn-ghost" onclick="closeModal('resource-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Save</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Transfer Modal -->
+<div class="modal-overlay" id="transfer-modal">
+    <div class="modal">
+        <div class="modal-title">
+            <span>New Logistics Transfer</span>
+            <button class="modal-close" onclick="closeModal('transfer-modal')">✕</button>
+        </div>
+        <form onsubmit="saveTransfer(event)">
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Source Base</label>
+                    <select class="form-input" id="tf-source" required></select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Destination Base</label>
+                    <select class="form-input" id="tf-dest" required></select>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="form-group">
+                    <label class="form-label">Resource</label>
+                    <select class="form-input" id="tf-resource" required></select>
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Quantity</label>
+                    <input class="form-input" id="tf-qty" type="number" step="any" min="0.01" required>
+                </div>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Status</label>
+                <select class="form-input" id="tf-init-status">
+                    <option value="Pending">Pending</option>
+                    <option value="In Transit">In Transit</option>
+                    <option value="Completed">Completed</option>
+                </select>
+            </div>
+            <div style="display:flex;justify-content:flex-end;gap:10px;margin-top:20px;">
+                <button type="button" class="btn btn-ghost" onclick="closeModal('transfer-modal')">Cancel</button>
+                <button type="submit" class="btn btn-primary">Create Transfer</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+let allBases = [];
+let allResources = [];
+let allPersonnel = [];
+let allResourceInv = [];
+let allTransfers = [];
+
+// ── Init ──────────────────────────────────────────────────────────────
+async function init() {
+    const [bases, resources] = await Promise.all([
+        api('/api/bases'),
+        api('/api/resources')
+    ]);
+    allBases = bases;
+    allResources = resources;
+
+    // Populate base filters
+    const baseOpts = bases.map(b =>
+        `<option value="${b.base_id}">${b.force_type === 'Naval' ? '⚓' : '✈️'} ${b.base_name}</option>`
+    ).join('');
+
+    document.getElementById('p-base-filter').innerHTML = '<option value="">All Bases</option>' + baseOpts;
+    document.getElementById('r-base-filter').innerHTML = '<option value="">All Bases</option>' + baseOpts;
+
+    // Populate modal selects
+    document.getElementById('pm-base').innerHTML = baseOpts;
+    document.getElementById('rm-base').innerHTML = baseOpts;
+    document.getElementById('tf-source').innerHTML = baseOpts;
+    document.getElementById('tf-dest').innerHTML = baseOpts;
+
+    const resOpts = resources.map(r =>
+        `<option value="${r.resource_id}">${r.resource_type} (${r.unit_of_measurement})</option>`
+    ).join('');
+    document.getElementById('rm-resource').innerHTML = resOpts;
+    document.getElementById('tf-resource').innerHTML = resOpts;
+
+    loadPersonnel();
+    loadResources();
+    loadTransfers();
+
+    // Auto-switch to tab from URL hash
+    const hash = window.location.hash.replace('#', '');
+    if (['personnel','resources','transfers'].includes(hash)) {
+        switchTab(hash, document.getElementById('tab-' + hash));
+    }
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────
+function switchTab(name, btn) {
+    document.querySelectorAll('.ops-tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.ops-pane').forEach(p => p.classList.remove('active'));
+    if (btn) btn.classList.add('active');
+    document.getElementById('pane-' + name).classList.add('active');
+    window.location.hash = name;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  PERSONNEL
+// ══════════════════════════════════════════════════════════════════════
+async function loadPersonnel() {
+    const baseId = document.getElementById('p-base-filter').value;
+    const url = baseId ? `/api/personnel?base_id=${baseId}` : '/api/personnel';
+    allPersonnel = await api(url);
+    filterPersonnel();
+}
+
+function filterPersonnel() {
+    const q = document.getElementById('p-search').value.toLowerCase();
+    let filtered = allPersonnel;
+    if (q) filtered = filtered.filter(p => p.name.toLowerCase().includes(q));
+
+    document.getElementById('p-count').textContent = `${filtered.length} personnel`;
+    document.getElementById('personnel-body').innerHTML = filtered.length === 0
+        ? '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">No personnel found</td></tr>'
+        : filtered.map(p => `
+        <tr>
+            <td style="font-family:'JetBrains Mono',monospace;color:var(--muted);">${p.service_id}</td>
+            <td style="font-weight:600;color:var(--text);">${p.name}</td>
+            <td>${statusBadge(p.role)}</td>
+            <td style="color:var(--dim);">${p.base_name}</td>
+            <td>${statusBadge(p.avail_status)}</td>
+            <td>
+                <button class="btn btn-ghost btn-sm" onclick='editPersonnel(${JSON.stringify(p)})'>Edit</button>
+                <button class="btn btn-danger btn-sm" onclick="deletePersonnel(${p.service_id})">Del</button>
+            </td>
+        </tr>
+    `).join('');
+}
+
+function openPersonnelModal(data) {
+    document.getElementById('pm-title').textContent = data ? 'Edit Personnel' : 'Add Personnel';
+    document.getElementById('pm-id').value = data ? data.service_id : '';
+    document.getElementById('pm-name').value = data ? data.name : '';
+    document.getElementById('pm-role').value = data ? data.role : 'Pilot';
+    document.getElementById('pm-status').value = data ? data.avail_status : 'On Duty';
+    if (data) document.getElementById('pm-base').value = data.base_id;
+    openModal('personnel-modal');
+}
+
+function editPersonnel(p) { openPersonnelModal(p); }
+
+async function savePersonnel(e) {
+    e.preventDefault();
+    const id = document.getElementById('pm-id').value;
+    const body = {
+        name: document.getElementById('pm-name').value.trim(),
+        role: document.getElementById('pm-role').value,
+        avail_status: document.getElementById('pm-status').value,
+        base_id: parseInt(document.getElementById('pm-base').value)
+    };
+    if (!body.name) { showToast('Name is required', 'error'); return; }
+
+    try {
+        if (id) {
+            await api(`/api/personnel/${id}`, { method: 'PUT', body });
+        } else {
+            await api('/api/personnel', { method: 'POST', body });
+        }
+        showToast('Personnel saved', 'success');
+        closeModal('personnel-modal');
+        loadPersonnel();
+    } catch(e) {}
+}
+
+async function deletePersonnel(sid) {
+    if (!confirm('Delete this personnel record?')) return;
+    try {
+        await api(`/api/personnel/${sid}`, { method: 'DELETE' });
+        showToast('Personnel deleted', 'success');
+        loadPersonnel();
+    } catch(e) {}
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  RESOURCES
+// ══════════════════════════════════════════════════════════════════════
+async function loadResources() {
+    const baseId = document.getElementById('r-base-filter').value;
+    const url = baseId ? `/api/resource-inventory?base_id=${baseId}` : '/api/resource-inventory';
+    allResourceInv = await api(url);
+    renderResources();
+}
+
+function renderResources() {
+    const rows = allResourceInv;
+    document.getElementById('r-count').textContent = `${rows.length} entries`;
+
+    document.getElementById('resources-body').innerHTML = rows.length === 0
+        ? '<tr><td colspan="6" style="text-align:center;color:var(--muted);padding:30px;">No resource inventory</td></tr>'
+        : rows.map(r => {
+            const statusCls = r.status === 'Critical' ? 'color:var(--red);font-weight:700;'
+                            : r.status === 'Low' ? 'color:var(--yellow);font-weight:700;'
+                            : 'color:var(--green);';
+            return `
+            <tr>
+                <td style="font-weight:600;color:var(--text);">${r.base_name}</td>
+                <td style="color:var(--dim);">${r.resource_type}</td>
+                <td style="font-family:'JetBrains Mono',monospace;font-weight:700;color:var(--cyan);">${fmt(r.quantity)}</td>
+                <td style="font-size:11px;color:var(--muted);">${r.unit_of_measurement}</td>
+                <td><span style="${statusCls}">${r.status || '—'}</span></td>
+                <td>
+                    <button class="btn btn-ghost btn-sm" onclick='editResource(${JSON.stringify(r)})'>Edit</button>
+                    <button class="btn btn-danger btn-sm" onclick="deleteResource(${r.inventory_id})">Del</button>
+                </td>
+            </tr>`;
+        }).join('');
+}
+
+function openResourceModal(data) {
+    document.getElementById('rm-title').textContent = data ? 'Edit Resource Inventory' : 'Add Resource to Base';
+    document.getElementById('rm-inv-id').value = data ? data.inventory_id : '';
+    if (data) {
+        document.getElementById('rm-base').value = data.base_id;
+        document.getElementById('rm-resource').value = data.resource_id;
+        document.getElementById('rm-qty').value = data.quantity;
+        document.getElementById('rm-status').value = data.status || 'Adequate';
+        // Disable base/resource on edit (can't change the key)
+        document.getElementById('rm-base').disabled = true;
+        document.getElementById('rm-resource').disabled = true;
+    } else {
+        document.getElementById('rm-qty').value = '';
+        document.getElementById('rm-status').value = 'Adequate';
+        document.getElementById('rm-base').disabled = false;
+        document.getElementById('rm-resource').disabled = false;
+    }
+    openModal('resource-modal');
+}
+
+function editResource(r) { openResourceModal(r); }
+
+async function saveResource(e) {
+    e.preventDefault();
+    const invId = document.getElementById('rm-inv-id').value;
+    const qty = parseFloat(document.getElementById('rm-qty').value);
+    const status = document.getElementById('rm-status').value;
+
+    if (isNaN(qty) || qty < 0) { showToast('Quantity must be non-negative', 'error'); return; }
+
+    try {
+        if (invId) {
+            await api(`/api/resource-inventory/${invId}`, { method: 'PUT', body: { quantity: qty, status } });
+        } else {
+            await api('/api/resource-inventory', {
+                method: 'POST',
+                body: {
+                    base_id: parseInt(document.getElementById('rm-base').value),
+                    resource_id: parseInt(document.getElementById('rm-resource').value),
+                    quantity: qty,
+                    status
+                }
+            });
+        }
+        showToast('Resource inventory saved', 'success');
+        closeModal('resource-modal');
+        loadResources();
+    } catch(e) {}
+}
+
+async function deleteResource(invId) {
+    if (!confirm('Delete this resource inventory entry?')) return;
+    try {
+        await api(`/api/resource-inventory/${invId}`, { method: 'DELETE' });
+        showToast('Deleted', 'success');
+        loadResources();
+    } catch(e) {}
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  TRANSFERS
+// ══════════════════════════════════════════════════════════════════════
+async function loadTransfers() {
+    allTransfers = await api('/api/transfers');
+    filterTransfers();
+}
+
+function filterTransfers() {
+    const statusFilter = document.getElementById('tf-status-filter').value;
+    let filtered = allTransfers;
+    if (statusFilter) filtered = filtered.filter(t => t.status === statusFilter);
+
+    document.getElementById('tf-count').textContent = `${filtered.length} transfers`;
+    document.getElementById('transfers-list').innerHTML = filtered.length === 0
+        ? '<div style="text-align:center;color:var(--muted);padding:40px;">No transfers found</div>'
+        : filtered.map(t => {
+            const statusColors = {
+                'Pending': 'var(--yellow)', 'In Transit': 'var(--cyan)',
+                'Completed': 'var(--green)', 'Cancelled': 'var(--red)'
+            };
+            const col = statusColors[t.status] || 'var(--muted)';
+            return `
+            <div class="transfer-card" style="border-left:3px solid ${col};">
+                <div class="tc-route">
+                    <div class="tc-route-label">${t.source_base}</div>
+                    <div class="tc-route-sub">Transfer #${t.transfer_id} · ${t.start_date || '—'}</div>
+                </div>
+                <div class="tc-arrow">→</div>
+                <div class="tc-route">
+                    <div class="tc-route-label">${t.dest_base}</div>
+                    <div class="tc-route-sub">${t.resource_type}</div>
+                </div>
+                <div class="tc-qty">${fmt(t.quantity_transferred)} ${t.unit_of_measurement}</div>
+                <div>${statusBadge(t.status)}</div>
+                <div class="tc-actions">
+                    <select class="select" style="font-size:11px;padding:4px 8px;min-width:auto;"
+                        onchange="updateTransferStatus(${t.transfer_id}, this.value)" title="Change status">
+                        <option value="Pending" ${t.status==='Pending'?'selected':''}>Pending</option>
+                        <option value="In Transit" ${t.status==='In Transit'?'selected':''}>In Transit</option>
+                        <option value="Completed" ${t.status==='Completed'?'selected':''}>Completed</option>
+                        <option value="Cancelled" ${t.status==='Cancelled'?'selected':''}>Cancelled</option>
+                    </select>
+                    <button class="btn btn-danger btn-sm" onclick="deleteTransfer(${t.transfer_id})">✕</button>
+                </div>
+            </div>`;
+        }).join('');
+}
+
+function openTransferModal() {
+    document.getElementById('tf-qty').value = '';
+    document.getElementById('tf-init-status').value = 'Pending';
+    openModal('transfer-modal');
+}
+
+async function saveTransfer(e) {
+    e.preventDefault();
+    const src = parseInt(document.getElementById('tf-source').value);
+    const dst = parseInt(document.getElementById('tf-dest').value);
+    if (src === dst) { showToast('Source and destination must be different', 'error'); return; }
+
+    const qty = parseFloat(document.getElementById('tf-qty').value);
+    if (isNaN(qty) || qty <= 0) { showToast('Quantity must be positive', 'error'); return; }
+
+    try {
+        await api('/api/transfers', {
+            method: 'POST',
+            body: {
+                source_base_id: src,
+                transfer_base_id: dst,
+                resource_id: parseInt(document.getElementById('tf-resource').value),
+                quantity_transferred: qty,
+                status: document.getElementById('tf-init-status').value
+            }
+        });
+        showToast('Transfer created', 'success');
+        closeModal('transfer-modal');
+        loadTransfers();
+    } catch(e) {}
+}
+
+async function updateTransferStatus(tid, status) {
+    try {
+        await api(`/api/transfers/${tid}`, { method: 'PUT', body: { status } });
+        showToast(`Transfer #${tid} → ${status}`, 'success');
+        loadTransfers();
+    } catch(e) {}
+}
+
+async function deleteTransfer(tid) {
+    if (!confirm('Delete this transfer record?')) return;
+    try {
+        await api(`/api/transfers/${tid}`, { method: 'DELETE' });
+        showToast('Transfer deleted', 'success');
+        loadTransfers();
+    } catch(e) {}
+}
+
+init();
+</script>
+{% endblock %}
