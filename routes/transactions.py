@@ -46,7 +46,7 @@ def _read_conn():
     cfg = {
         'host':     os.environ.get('DB_HOST', 'localhost'),
         'user':     os.environ.get('DB_USER', 'root'),
-        'password': os.environ.get('DB_PASSWORD', '1983'),
+        'password': os.environ.get('DB_PASSWORD', 'changeme'),
         'database': os.environ.get('DB_NAME', 'STRATOS_DB'),
         'autocommit': True,
         'use_pure': True,
@@ -59,7 +59,7 @@ def _write_conn():
     cfg = {
         'host':     os.environ.get('DB_HOST', 'localhost'),
         'user':     os.environ.get('DB_USER', 'root'),
-        'password': os.environ.get('DB_PASSWORD', '1983'),
+        'password': os.environ.get('DB_PASSWORD', 'changeme'),
         'database': os.environ.get('DB_NAME', 'STRATOS_DB'),
         'autocommit': False,
         'use_pure': True,

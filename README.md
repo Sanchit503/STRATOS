@@ -1,76 +1,123 @@
-# STRATOS Strategic Map & Database System
+# STRATOS — Strategic Map & Database Command System
 
 ![STRATOS App Screenshot](screenshot.png)
 
-## Overview
-STRATOS is a comprehensive military strategic map application and database management system demonstration. It features a Flask-based web application with an interactive map, dashboards for tracking military assets, and robust database operations running on MySQL. This project doubles as a demonstration of complex database transaction scenarios (concurrency, deadlocks, isolation levels) and advanced SQL queries.
+![Python](https://img.shields.io/badge/Python-3.8+-3776AB?logo=python&logoColor=white)
+![Flask](https://img.shields.io/badge/Flask-Backend-000000?logo=flask&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-Database-4479A1?logo=mysql&logoColor=white)
+![Leaflet](https://img.shields.io/badge/Leaflet.js-Interactive%20Map-199900?logo=leaflet&logoColor=white)
+
+A full-stack military command-and-control simulation: an interactive strategic map, live asset/mission management, and a from-scratch relational database engineered to demonstrate real transaction concurrency (deadlocks, dirty reads, lost updates) and advanced SQL — not just a CRUD app.
+
+---
+
+## Why this project
+
+Most database course projects stop at a schema and a few `SELECT` statements. STRATOS goes further: it's built around **15 production-grade SQL queries** mapped explicitly to relational algebra, and a **dedicated multi-threaded transaction engine** that reproduces and resolves classic concurrency failure modes (dirty reads, lost updates, deadlocks) using `SERIALIZABLE` isolation — the kind of problem you'd actually hit running a real backend against a shared database.
 
 ## Key Features
-- **Interactive Map Dashboard:** Visualizes bases, enemy threats, and military assets across geographical locations.
-- **Asset Management:** Tracks missiles, vehicles, personnel, and resource inventories (fuel, ammunition) assigned to various bases.
-- **Mission Planning:** Facilitates attack simulations, readiness reporting, and logistics transfers.
-- **Transaction Demonstrations:** Dedicated multi-threaded python scripts to showcase transaction behaviours, including commit, rollback, dirty reads, deadlocks, the lost update problem, and resolutions using `SERIALIZABLE` isolation.
-- **Advanced SQL Queries:** Contains 15 complex SQL queries mapping to relational algebra operations for comprehensive data retrieval and analysis.
 
-## Project Structure
-- **`app.py`**: The main Flask application entry point, registering various blueprints for modular routing.
-- **`routes/`**: Contains modular Flask blueprints handling backend logic for distinct components (`dashboard.py`, `bases.py`, `missiles.py`, `vehicles.py`, `enemy.py`, `map.py`, `missions.py`).
-- **`db.py` & `utils.py`**: Database connection utility to interface with `STRATOS_DB`, and a utility module containing functions like the Haversine formula for geographic distance calculations.
-- **`initialize.sql` & `seed.sql`**: SQL scripts establishing the `STRATOS_DB` schema and populating it with realistic seed data.
-- **`app_queries_15.sql` & `queries_explanation.md`**: A suite of 15 advanced SQL queries designed for reporting and data retrieval, along with markdown documentation explaining their logic.
-- **`run_demo.py` & `run_queries.py`**: Python scripts to execute and display the output of the predefined advanced SQL queries.
-- **`transaction_demo.py`**: A robust, multi-threaded script that simulates concurrency to demonstrate database transaction conflicts (Lost Updates, Dirty Reads, Deadlocks) and their resolutions.
-- **`templates/` & `static/`**: HTML views, CSS styles (`nav.css`, `style.css`), and frontend JavaScript logic (`common.js`, `map.js`) for rendering the interactive user interface. Includes GeoJSON data (`india.geojson`) for map rendering.
+| Feature | Description |
+|---|---|
+| 🗺️ **Interactive Map Dashboard** | Live Leaflet-based map visualizing friendly bases, enemy threats, and military assets by geography, with distance calculations via the Haversine formula. |
+| 📦 **Asset Management** | Full tracking of missiles, vehicles, personnel, and resource inventories (fuel, ammunition) across bases. |
+| 🎯 **Mission Planning** | Attack simulation engine that cross-references missile range, base readiness, and personnel availability before a strike. |
+| 🔄 **Transaction Engine** | 7 multi-threaded transaction demos exposed as live JSON API endpoints — commit, rollback, dirty reads, deadlocks, lost updates, and their resolutions via `SERIALIZABLE` isolation. |
+| 📊 **Advanced SQL Suite** | 15 complex queries (joins, aggregation, subqueries, window-style ranking) each documented with the relational algebra operations they implement. |
 
-## Database Schema (`STRATOS_DB`)
-The relational database models the military domain with tables including:
-- **Bases & Enemy_Base**: Geographic locations and threat levels of friendly and hostile installations.
-- **Personnel**: Tracking of military staff and availability status.
-- **Vehicle_Type, Vehicle_Status & Vehicle_Inventory**: Comprehensive tracking of land, air, and sea vehicles.
-- **Missile_Type & Missile_Inventory**: Arsenal inventory management per base.
-- **Resource & Resource_Inventory**: Logistical tracking for consumables like fuel and ammunition.
-- **Attack_Simulation, Readiness_Report & Logistics_Transfer**: Operational and strategic planning tables.
+## Tech Stack
 
-## Setup & Execution
+- **Backend:** Python, Flask (modular blueprint architecture)
+- **Database:** MySQL — 13+ table relational schema with FK constraints
+- **Frontend:** Vanilla JS, Leaflet.js, GeoJSON
+- **Concurrency:** Python `threading` for live transaction-conflict demonstrations
+
+## Architecture
+
+```
+STRATOS/
+├── app.py                  # Flask entry point — registers all blueprints
+├── db.py                   # DB connection layer (env-var configured)
+├── utils.py                # Haversine distance calculation
+├── routes/                 # Modular blueprints, one per domain
+│   ├── dashboard.py        # Summary stats
+│   ├── bases.py            # Friendly base CRUD + readiness
+│   ├── enemy.py            # Enemy base intel
+│   ├── missiles.py         # Missile inventory per base
+│   ├── vehicles.py         # Vehicle inventory per base
+│   ├── missions.py         # Attack simulation / mission analysis
+│   ├── operations.py       # Personnel + resource CRUD
+│   ├── transactions.py     # 7 transaction-concurrency demo endpoints
+│   └── pages.py             # HTML page routing
+├── templates/ & static/    # Frontend views, CSS, JS, GeoJSON
+├── initialize.sql & seed.sql   # Schema + realistic seed data
+├── app_queries_15.sql          # 15 advanced SQL queries
+├── queries_explanation.md      # Relational algebra breakdown per query
+└── transaction_demo.py         # Standalone CLI transaction demo
+```
+
+## Database Schema
+
+13+ interrelated tables modeling a real military domain:
+
+- **`Bases`** / **`Enemy_Base`** — geolocated friendly and hostile installations
+- **`Personnel`** — staff tracking with availability status
+- **`Vehicle_Type`**, **`Vehicle_Status`**, **`Vehicle_Inventory`** — land/air/sea asset tracking
+- **`Missile_Type`**, **`Missile_Inventory`** — arsenal management per base
+- **`Resource`**, **`Resource_Inventory`** — fuel/ammo logistics
+- **`Attack_Simulation`**, **`Readiness_Report`**, **`Logistics_Transfer`** — operational planning tables
+
+## Getting Started
 
 ### Prerequisites
 - Python 3.8+
 - MySQL Server
-- Install dependencies (Flask, MySQL Connector):
-  ```bash
-  pip install -r requirements.txt
-  ```
 
-### Database Initialization
-1. Ensure your MySQL server is active.
-2. Create the schema and seed the database using the provided scripts:
-   ```bash
-   mysql -u <your_user> -p < initialize.sql
-   mysql -u <your_user> -p STRATOS_DB < seed.sql
-   ```
-3. Set your database connection environment variables (if different from the defaults in `db.py`):
-   ```bash
-   export DB_HOST='localhost'
-   export DB_USER='root'
-   export DB_PASSWORD='your_password'
-   export DB_NAME='STRATOS_DB'
-   ```
+### Installation
 
-### Running the Web Application
-Start the Flask web server:
+```bash
+git clone https://github.com/Sanchit503/STRATOS.git
+cd STRATOS
+pip install -r requirements.txt
+```
+
+### Database Setup
+
+```bash
+mysql -u <your_user> -p < initialize.sql
+mysql -u <your_user> -p STRATOS_DB < seed.sql
+```
+
+Configure your connection (defaults to `localhost` / `root` if unset):
+
+```bash
+export DB_HOST='localhost'
+export DB_USER='root'
+export DB_PASSWORD='your_password'
+export DB_NAME='STRATOS_DB'
+```
+
+### Run
+
 ```bash
 python app.py
 ```
-Access the application by navigating to `http://localhost:5000` in your web browser.
 
-### Running the Demonstrations
-- **SQL Queries Demo:** 
-  Execute the 15 advanced queries and view their formatted terminal output.
-  ```bash
-  python run_demo.py
-  ```
-- **Database Transactions Demo:** 
-  Run the interactive transaction script to observe multi-threaded database scenarios and concurrency controls.
-  ```bash
-  python transaction_demo.py
-  ```
+Visit `http://localhost:5000`.
+
+### Explore the Database Layer
+
+```bash
+python run_demo.py           # Runs all 15 advanced SQL queries with formatted output
+python transaction_demo.py   # Interactive multi-threaded transaction concurrency demo
+```
+
+## Highlights for Reviewers
+
+- **`routes/transactions.py`** — the concurrency engine; each endpoint returns `{before, steps, after, effect}` so the UI can render live before/after DB state.
+- **`queries_explanation.md`** — every one of the 15 queries mapped to formal relational algebra ($\sigma$, $\pi$, $\bowtie$, $\gamma$).
+- **`utils.py`** — Haversine great-circle distance used for real geographic range calculations in mission planning.
+
+---
+
+*Built as a database systems project demonstrating transaction isolation, concurrency control, and applied relational algebra on top of a full-stack Flask application.*
